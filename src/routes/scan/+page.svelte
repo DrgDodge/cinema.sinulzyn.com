@@ -5,10 +5,14 @@
 
     let videoElement = $state<HTMLVideoElement>();
     let canvasElement = $state<HTMLCanvasElement>();
+    let overlayCanvas = $state<HTMLCanvasElement>(); // The transparent AR overlay
     let stream = $state<MediaStream | null>(null);
     
     let processing = $state(false);
     let progress = $state(0);
+
+    // AR Tracking loop ID
+    let animId = 0;
 
     // Camera switching state
     let videoDevices = $state<MediaDeviceInfo[]>([]);
@@ -22,13 +26,11 @@
         room: '',
         row: '',
         seat: '',
-        qrData: '', // The hidden data inside the physical QR code
-        qrText: ''  // The text printed underneath the QR code
+        qrData: '', 
+        qrText: ''
     });
 
     let showTicket = $state(false);
-
-    // Reactive check to enable the Generate button
     let isComplete = $derived(!!(draft.movie && draft.date && draft.time && draft.room && draft.row && draft.seat));
 
     onMount(async () => {
@@ -59,6 +61,11 @@
             stream = await navigator.mediaDevices.getUserMedia(constraints);
             if (videoElement && stream) {
                 videoElement.srcObject = stream;
+                
+                // Once the video starts playing, launch the AR scanning loop
+                videoElement.onplay = () => {
+                    startARLoop();
+                };
             }
             
             if (videoDevices.length === 0) {
@@ -87,35 +94,114 @@
     }
 
     function stopStream() {
+        cancelAnimationFrame(animId);
         if (stream) {
             stream.getTracks().forEach(track => track.stop());
             stream = null;
         }
     }
 
+    // Calculates the offset and scaling to map video coordinates to the object-cover display
+    function getCoverTransforms() {
+        if (!videoElement || !overlayCanvas) return { scale: 1, offsetX: 0, offsetY: 0 };
+        
+        const videoRatio = videoElement.videoWidth / videoElement.videoHeight;
+        const displayRatio = overlayCanvas.width / overlayCanvas.height;
+        let scale, offsetX, offsetY;
+
+        if (displayRatio > videoRatio) {
+            // Container wider than video. Video scales to fit width, crops top/bottom.
+            scale = overlayCanvas.width / videoElement.videoWidth;
+            offsetX = 0;
+            offsetY = (overlayCanvas.height - (videoElement.videoHeight * scale)) / 2;
+        } else {
+            // Container taller than video. Video scales to fit height, crops left/right.
+            scale = overlayCanvas.height / videoElement.videoHeight;
+            offsetX = (overlayCanvas.width - (videoElement.videoWidth * scale)) / 2;
+            offsetY = 0;
+        }
+        return { scale, offsetX, offsetY };
+    }
+
+    // Real-time loop to find and draw bounding boxes around QR codes
+    function startARLoop() {
+        if (!videoElement || !overlayCanvas) return;
+        
+        const offscreen = document.createElement('canvas');
+        const offCtx = offscreen.getContext('2d', { willReadFrequently: true });
+        if (!offCtx) return;
+
+        function tick() {
+            if (!videoElement || !overlayCanvas || processing || videoElement.paused || videoElement.ended) {
+                return;
+            }
+
+            if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+                overlayCanvas.width = overlayCanvas.clientWidth;
+                overlayCanvas.height = overlayCanvas.clientHeight;
+                const oCtx = overlayCanvas.getContext('2d');
+                if (!oCtx) return;
+
+                oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+                // Downscale video for fast real-time QR detection
+                offscreen.width = 400;
+                offscreen.height = Math.floor(400 / (videoElement.videoWidth / videoElement.videoHeight));
+                offCtx.drawImage(videoElement, 0, 0, offscreen.width, offscreen.height);
+                
+                const imgData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
+                const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "attemptBoth" });
+
+                if (code) {
+                    draft.qrData = code.data;
+                    
+                    // Draw AR Box on screen
+                    const scaleToVideo = videoElement.videoWidth / offscreen.width;
+                    const transforms = getCoverTransforms();
+                    
+                    const mapPt = (pt: {x: number, y: number}) => ({
+                        x: (pt.x * scaleToVideo) * transforms.scale + transforms.offsetX,
+                        y: (pt.y * scaleToVideo) * transforms.scale + transforms.offsetY
+                    });
+                    
+                    const pt1 = mapPt(code.location.topLeftCorner);
+                    const pt2 = mapPt(code.location.topRightCorner);
+                    const pt3 = mapPt(code.location.bottomRightCorner);
+                    const pt4 = mapPt(code.location.bottomLeftCorner);
+                    
+                    oCtx.beginPath();
+                    oCtx.moveTo(pt1.x, pt1.y);
+                    oCtx.lineTo(pt2.x, pt2.y);
+                    oCtx.lineTo(pt3.x, pt3.y);
+                    oCtx.lineTo(pt4.x, pt4.y);
+                    oCtx.closePath();
+                    oCtx.lineWidth = 4;
+                    oCtx.strokeStyle = "#22c55e"; // green-500
+                    oCtx.fillStyle = "rgba(34, 197, 94, 0.3)";
+                    oCtx.fill();
+                    oCtx.stroke();
+                }
+            }
+            animId = requestAnimationFrame(tick);
+        }
+        animId = requestAnimationFrame(tick);
+    }
+
     async function captureAndScan() {
-        if (!videoElement || !canvasElement) return;
+        if (!videoElement || !canvasElement || !overlayCanvas) return;
 
         processing = true;
         progress = 0;
+        cancelAnimationFrame(animId);
+        videoElement.pause(); // Freeze the frame!
 
         const ctx = canvasElement.getContext('2d', { willReadFrequently: true });
         if (!ctx) return;
 
         canvasElement.width = videoElement.videoWidth;
         canvasElement.height = videoElement.videoHeight;
-        
-        // 1. Draw raw image first for QR Code reading
-        ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-        const rawImageData = ctx.getImageData(0, 0, canvasElement.width, canvasElement.height);
-        
-        // Scan for physical QR Code
-        const code = jsQR(rawImageData.data, rawImageData.width, rawImageData.height);
-        if (code && !draft.qrData) {
-            draft.qrData = code.data;
-        }
 
-        // 2. Apply extreme contrast filters for Tesseract OCR
+        // Apply extreme contrast filters for Tesseract OCR
         ctx.filter = 'grayscale(100%) contrast(250%) brightness(120%)';
         ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
         ctx.filter = 'none';
@@ -134,6 +220,29 @@
                     }
                 }
             );
+            
+            // Draw Post-Capture AR Bounding Boxes over all recognized text!
+            const oCtx = overlayCanvas.getContext('2d');
+            const transforms = getCoverTransforms();
+            
+            if (oCtx && transforms) {
+                // Clear any existing QR tracking box
+                oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                
+                result.data.words.forEach(word => {
+                    const x = word.bbox.x0 * transforms.scale + transforms.offsetX;
+                    const y = word.bbox.y0 * transforms.scale + transforms.offsetY;
+                    const w = (word.bbox.x1 - word.bbox.x0) * transforms.scale;
+                    const h = (word.bbox.y1 - word.bbox.y0) * transforms.scale;
+                    
+                    oCtx.strokeStyle = "rgba(34, 197, 94, 0.8)";
+                    oCtx.lineWidth = 2;
+                    oCtx.strokeRect(x, y, w, h);
+                    oCtx.fillStyle = "rgba(34, 197, 94, 0.2)";
+                    oCtx.fillRect(x, y, w, h);
+                });
+            }
+
             parseReceipt(result.data.text);
         } catch (err) {
             console.error('OCR Error:', err);
@@ -148,11 +257,8 @@
         const dateTimeRegex = /D[A4]T[A4][:;\s]*([\d.]+)\s*[O0]R[A4][:;\s]*([\d:]+)/i;
         const roomRegex = /S[A4]L[A4]\s*([O0]?\d+)/i;
         const seatRegex = /R[A4]NDUL[:;\s]*(\d+)\s*L[O0]CUL[:;\s]*(\d+)/i;
-        
-        // QR text is usually a long string of numbers/letters at the bottom
         const idRegex = /\b([A-Z0-9]{9,25})\b/i; 
 
-        // Find the index of the Date/Time line to use as an anchor
         const dateLineIndex = lines.findIndex(l => dateTimeRegex.test(l));
 
         for (let i = 0; i < lines.length; i++) {
@@ -177,32 +283,26 @@
 
             const idMatch = line.match(idRegex);
             if (idMatch && !draft.qrText) {
-                // If it's a long number, assume it's the barcode/QR text
                 draft.qrText = idMatch[1];
             }
         }
 
-        // --- IMPROVED MOVIE NAME EXTRACTION ---
-        // Look backwards from the Date/Time line
+        // Improved backward search for movie name
         if (dateLineIndex > 0 && !draft.movie) {
             for (let j = dateLineIndex - 1; j >= 0; j--) {
                 let m = lines[j].trim();
-                
-                // Skip lines that are just age ratings, formats, or random noise
                 if (/^(2D|3D|4DX|IMAX|VIP|SUB|DUB|ATMOS|MACRO|AP12|N15|IM18|\s|,)+$/i.test(m)) continue;
-                if (m.length < 3) continue; // Too short to be a movie
-
-                // Strip trailing stray digits or punctuation
+                if (m.length < 3) continue; 
                 m = m.replace(/[\s\-,;]+[\dOIl]$/, '');
                 draft.movie = m;
-                break; // Found the movie title!
+                break; 
             }
         }
     }
 
     function generateTicket() {
         if (!draft.qrData && draft.qrText) {
-            draft.qrData = draft.qrText; // Fallback: Use the text as the QR data
+            draft.qrData = draft.qrText; 
         } else if (!draft.qrData) {
             draft.qrData = Math.floor(Math.random() * 9000000000) + 1000000000 + '';
         }
@@ -218,7 +318,18 @@
     function scanAnother() {
         draft = { movie: '', date: '', time: '', room: '', row: '', seat: '', qrData: '', qrText: '' };
         showTicket = false;
-        startCamera();
+        
+        // If the video was paused during AR capture, clear the overlay and unpause it.
+        if (videoElement) {
+            const oCtx = overlayCanvas?.getContext('2d');
+            if (oCtx && overlayCanvas) {
+                oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            }
+            videoElement.play();
+            startARLoop();
+        } else {
+            startCamera();
+        }
     }
 </script>
 
@@ -240,6 +351,9 @@
             ></video>
             
             <canvas bind:this={canvasElement} class="hidden"></canvas>
+            
+            <!-- Transparent AR Overlay Canvas -->
+            <canvas bind:this={overlayCanvas} class="absolute inset-0 w-full h-full z-10 pointer-events-none"></canvas>
 
             <!-- Guide Overlay -->
             <div class="absolute inset-0 border-[2px] border-white/20 m-6 rounded-xl pointer-events-none"></div>
@@ -256,7 +370,7 @@
             {/if}
 
             {#if processing}
-                <div class="absolute inset-0 bg-gray-950/80 flex flex-col items-center justify-center backdrop-blur-md">
+                <div class="absolute inset-0 bg-gray-950/80 flex flex-col items-center justify-center backdrop-blur-md z-30">
                     <div class="text-blue-400 font-medium mb-3">Scanning...</div>
                     <div class="w-3/4 h-1.5 bg-gray-800 rounded-full overflow-hidden">
                         <div class="h-full bg-blue-500 transition-all duration-300 ease-out" style="width: {progress}%"></div>
@@ -275,7 +389,7 @@
         </button>
 
         <!-- Infographic Checklist & Edit Form -->
-        <div class="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-2xl">
+        <div class="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-2xl z-40">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-sm font-semibold text-white">Scan Data</h3>
                 <span class="text-[10px] uppercase tracking-wider text-blue-400 font-bold px-2 py-1 bg-blue-500/10 rounded-md">Editable</span>
@@ -334,7 +448,7 @@
                     <div class="flex-1">
                         <label class="text-[10px] uppercase text-gray-500 font-medium ml-1 flex items-center gap-1">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
-                            QR Code Scanned
+                            QR Detected
                         </label>
                         <div class="relative mt-1 flex items-center h-10 px-3 bg-gray-950 border {draft.qrData ? 'border-green-500/30 text-green-400' : 'border-gray-800 text-gray-500'} rounded-xl text-xs font-mono overflow-hidden">
                             {draft.qrData ? draft.qrData.substring(0, 12) + '...' : 'Not found yet'}
