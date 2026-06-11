@@ -242,6 +242,7 @@
                         isWorkerBusy = false;
                     }).catch(e => {
                         console.error("Live OCR err:", e);
+                        ocrDebugError = 'Live Error: ' + e?.message;
                         isWorkerBusy = false;
                     });
                 }
@@ -396,6 +397,12 @@
 
 <div class="min-h-screen bg-gray-950 text-white flex flex-col items-center p-6 font-sans pb-24">
     <h1 class="text-2xl font-bold mb-6 mt-4 tracking-tight">Scanner</h1>
+
+    {#if ocrDebugError}
+        <div class="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-sm mb-6 w-full max-w-sm break-words">
+            <strong>Debug Error:</strong> {ocrDebugError}
+        </div>
+    {/if}
 
     {#if !showTicket}
         <!-- Progressive Camera View -->
