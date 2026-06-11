@@ -21,15 +21,26 @@ export const load: PageServerLoad = async ({ locals }) => {
         }
 
         // Fetch tickets and groups using the Admin client to ensure we see everything
-        const tickets = await adminPb.collection('tickets').getFullList({
-            filter: `userId = "${locals.user.id}"`,
-            sort: '-created'
-        });
+        let tickets: any[] = [];
+        let groups: any[] = [];
 
-        const groups = await adminPb.collection('groups').getFullList({
-            filter: `userId = "${locals.user.id}"`,
-            sort: '-created'
-        });
+        try {
+            tickets = await adminPb.collection('tickets').getFullList({
+                filter: `userId = "${locals.user.id}"`,
+                sort: '-created'
+            });
+        } catch (e) {
+            console.log("[Passes Load] tickets collection likely doesn't exist yet.");
+        }
+
+        try {
+            groups = await adminPb.collection('groups').getFullList({
+                filter: `userId = "${locals.user.id}"`,
+                sort: '-created'
+            });
+        } catch (e) {
+            console.log("[Passes Load] groups collection likely doesn't exist yet.");
+        }
 
         console.log(`[Passes Load] User: ${locals.user.email}, Tickets: ${tickets.length}, Groups: ${groups.length}`);
 

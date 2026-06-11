@@ -21,8 +21,12 @@
                 <!-- Desktop Menu -->
                 <div class="hidden md:flex items-center space-x-8">
                     <a href="/" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Home</a>
+                    <a href="/passes" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Wallet</a>
                     <a href="/scan" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Scanner</a>
-                    <a href="/login" class="text-sm font-medium px-4 py-2 rounded-lg bg-gray-900 border border-gray-800 hover:border-gray-700 hover:bg-gray-800 text-white transition-all">Sign In</a>
+                    
+                    <form method="POST" action="/logout">
+                        <button type="submit" class="text-sm font-medium text-red-400 hover:text-red-300 transition-colors">Logout</button>
+                    </form>
                 </div>
 
                 <!-- Mobile menu button (Simplified for now) -->

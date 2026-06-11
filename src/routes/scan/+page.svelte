@@ -385,6 +385,13 @@
             }
         }
 
+        // --- IMPROVED ID DETECTION ---
+        // Overwrite qrText with the absolute last matching ID string in the entire receipt
+        const allPossibleIds = text.match(/\b([A-Z0-9]{9,25})\b/gi);
+        if (allPossibleIds && allPossibleIds.length > 0) {
+            draft.qrText = allPossibleIds[allPossibleIds.length - 1].toUpperCase();
+        }
+
         if (dateLineIndex > 0 && !draft.movie) {
             for (let j = dateLineIndex - 1; j >= 0; j--) {
                 let m = lines[j].trim();
