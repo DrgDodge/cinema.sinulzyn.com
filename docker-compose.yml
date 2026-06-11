@@ -12,7 +12,9 @@ services:
     restart: unless-stopped
 
   pb:
-    image: ghcr.io/muchobits/pocketbase:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.pb
     ports:
       - "8090:8090"
     volumes:
