@@ -63,7 +63,7 @@ export const actions = {
         const data = await request.formData();
         const isPublic = data.get('isPublic') === 'true';
 
-        console.log(`[Update Public] Group: ${params.id}, Setting Public to: ${isPublic}`);
+        console.log(`[Update Public] Attempting update for Group: ${params.id}, target state: ${isPublic}`);
 
         const pbUrl = process.env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090';
         const adminPb = new PocketBase(pbUrl);
@@ -71,14 +71,34 @@ export const actions = {
         try {
             const adminEmail = process.env.PB_ADMIN_EMAIL;
             const adminPassword = process.env.PB_ADMIN_PASSWORD;
-            if (adminEmail && adminPassword) {
-                 await adminPb.admins.authWithPassword(adminEmail, adminPassword);
+            
+            if (!adminEmail || !adminPassword) {
+                throw new Error("Missing Admin Credentials");
             }
+
+            await adminPb.admins.authWithPassword(adminEmail, adminPassword);
+
+            // Double check if field exists, if not try to add it dynamically
+            try {
+                const group = await adminPb.collection('groups').getOne(params.id);
+                if (group.isPublic === undefined) {
+                    console.log("[Update Public] 'isPublic' field missing in DB. Attempting to add it...");
+                    await adminPb.collections.update('groups', {
+                        'fields+': [{ name: 'isPublic', type: 'bool' }]
+                    });
+                }
+            } catch (e) {
+                console.log("[Update Public] Schema check failed, proceeding anyway.");
+            }
+
             await adminPb.collection('groups').update(params.id, { isPublic: isPublic });
+            console.log(`[Update Public] SUCCESS: Group ${params.id} is now ${isPublic ? 'PUBLIC' : 'PRIVATE'}`);
+            
             return { success: true };
         } catch (e: any) {
-            console.error("Update Public Error:", e.status, e.message);
-            return { success: false };
+            console.error("[Update Public] FAILED:", e.status || '500', e.message);
+            console.dir(e.response?.data || {}, { depth: null });
+            return { success: false, error: e.message };
         } finally {
             adminPb.authStore.clear();
         }
