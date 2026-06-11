@@ -88,7 +88,7 @@
         </form>
 
         <div class="mt-6 text-center">
-            <button onclick={toggleMode} class="text-sm text-gray-400 hover:text-white transition-colors cursor-pointer bg-transparent border-none">
+            <button type="button" onclick={toggleMode} class="text-sm text-gray-400 hover:text-white transition-colors cursor-pointer bg-transparent border-none">
                 {isRegister ? 'Already have an account? Sign in' : 'Need an account? Sign up'}
             </button>
         </div>
