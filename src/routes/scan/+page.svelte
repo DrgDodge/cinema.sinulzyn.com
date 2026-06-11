@@ -19,6 +19,7 @@
     let tesseractWorker: Tesseract.Worker | null = null;
     let isWorkerBusy = false;
     let liveWordBoxes: { x: number, y: number, w: number, h: number }[] = $state([]);
+    let ocrDebugError = $state('');
 
     // Camera switching state
     let videoDevices = $state<MediaDeviceInfo[]>([]);
@@ -41,14 +42,21 @@
 
     onMount(async () => {
         if (browser) {
-            // Initialize persistent Tesseract worker with a logger
-            tesseractWorker = await Tesseract.createWorker('ron+eng', 1, {
-                logger: m => {
-                    if (m.status === 'recognizing text') {
-                        progress = Math.round(m.progress * 100);
+            try {
+                // Initialize persistent Tesseract worker with a logger and explicit CDN paths to bypass Vite bundling issues
+                tesseractWorker = await Tesseract.createWorker('ron+eng', 1, {
+                    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+                    corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5',
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            progress = Math.round(m.progress * 100);
+                        }
                     }
-                }
-            });
+                });
+            } catch (err: any) {
+                ocrDebugError = 'Init Error: ' + err?.message;
+                console.error('Tesseract Init Error:', err);
+            }
             await startCamera();
         }
     });
@@ -253,7 +261,7 @@
     }
 
     async function captureAndScan() {
-        if (!browser || !videoElement || !canvasElement || !overlayCanvas || !tesseractWorker) return;
+        if (!browser || !videoElement || !canvasElement || !overlayCanvas) return;
 
         processing = true;
         progress = 0;
@@ -262,34 +270,65 @@
         }
         videoElement.pause(); 
 
+        if (tesseractWorker) {
+            await tesseractWorker.terminate();
+            tesseractWorker = null;
+            isWorkerBusy = false;
+        }
+
         const ctx = canvasElement.getContext('2d', { willReadFrequently: true });
         if (!ctx) return;
 
-        canvasElement.width = videoElement.videoWidth;
-        canvasElement.height = videoElement.videoHeight;
+        const maxCaptureWidth = 1200;
+        let capW = videoElement.videoWidth;
+        let capH = videoElement.videoHeight;
+        if (capW > maxCaptureWidth) {
+            const scale = maxCaptureWidth / capW;
+            capW = maxCaptureWidth;
+            capH = capH * scale;
+        }
+
+        canvasElement.width = capW;
+        canvasElement.height = capH;
 
         ctx.filter = 'grayscale(100%) contrast(250%) brightness(120%)';
-        ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+        ctx.drawImage(videoElement, 0, 0, capW, capH);
         ctx.filter = 'none';
         
-        const enhancedImageUrl = canvasElement.toDataURL('image/jpeg', 1.0);
+        const enhancedImageUrl = canvasElement.toDataURL('image/jpeg', 0.9);
 
         try {
-            // Use the ALREADY RUNNING persistent worker so it doesn't crash the browser by spinning up a new one
-            const result = await tesseractWorker.recognize(enhancedImageUrl);
+            const captureWorker = await Tesseract.createWorker('ron+eng', 1, {
+                workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+                corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5',
+                logger: m => {
+                    if (m.status === 'recognizing text') {
+                        progress = Math.round(m.progress * 100);
+                    }
+                }
+            });
+
+            const result = await captureWorker.recognize(enhancedImageUrl);
+            await captureWorker.terminate();
             
             // Clear AR boxes and draw the final exact ones
             const oCtx = overlayCanvas.getContext('2d');
             const transforms = getCoverTransforms();
+            const captureScaleToVideo = videoElement.videoWidth / capW;
             
             if (oCtx && transforms) {
                 oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
                 
-                result.data.words.forEach(word => {
-                    const x = word.bbox.x0 * transforms.scale + transforms.offsetX;
-                    const y = word.bbox.y0 * transforms.scale + transforms.offsetY;
-                    const w = (word.bbox.x1 - word.bbox.x0) * transforms.scale;
-                    const h = (word.bbox.y1 - word.bbox.y0) * transforms.scale;
+                (result.data as any).words.forEach((word: any) => {
+                    const vx = word.bbox.x0 * captureScaleToVideo;
+                    const vy = word.bbox.y0 * captureScaleToVideo;
+                    const vw = (word.bbox.x1 - word.bbox.x0) * captureScaleToVideo;
+                    const vh = (word.bbox.y1 - word.bbox.y0) * captureScaleToVideo;
+
+                    const x = vx * transforms.scale + transforms.offsetX;
+                    const y = vy * transforms.scale + transforms.offsetY;
+                    const w = vw * transforms.scale;
+                    const h = vh * transforms.scale;
                     
                     oCtx.strokeStyle = "rgba(34, 197, 94, 0.8)";
                     oCtx.lineWidth = 2;
@@ -300,8 +339,9 @@
             }
 
             parseReceipt(result.data.text);
-        } catch (err) {
+        } catch (err: any) {
             console.error('OCR Error:', err);
+            ocrDebugError = 'Capture Error: ' + err?.message;
         } finally {
             processing = false;
         }
