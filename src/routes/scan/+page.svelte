@@ -180,9 +180,9 @@
                 // 1. FAST QR CODE DETECTION (Runs every frame)
                 offscreen.width = 400;
                 offscreen.height = Math.floor(400 / (videoElement.videoWidth / videoElement.videoHeight));
-                offCtx.drawImage(videoElement, 0, 0, offscreen.width, offscreen.height);
+                offCtx!.drawImage(videoElement, 0, 0, offscreen.width, offscreen.height);
                 
-                const imgData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
+                const imgData = offCtx!.getImageData(0, 0, offscreen.width, offscreen.height);
                 const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "attemptBoth" });
 
                 const scaleToVideo = videoElement.videoWidth / offscreen.width;
@@ -234,9 +234,9 @@
                     textOffscreen.width = 1000;
                     textOffscreen.height = Math.floor(1000 / (videoElement.videoWidth / videoElement.videoHeight));
                     
-                    textOffCtx.filter = 'grayscale(100%) contrast(250%) brightness(120%)';
-                    textOffCtx.drawImage(videoElement, 0, 0, textOffscreen.width, textOffscreen.height);
-                    textOffCtx.filter = 'none';
+                    textOffCtx!.filter = 'grayscale(100%) contrast(250%) brightness(120%)';
+                    textOffCtx!.drawImage(videoElement, 0, 0, textOffscreen.width, textOffscreen.height);
+                    textOffCtx!.filter = 'none';
                     
                     const textScaleToVideo = videoElement.videoWidth / textOffscreen.width;
                     const dataUrl = textOffscreen.toDataURL('image/jpeg', 0.8);

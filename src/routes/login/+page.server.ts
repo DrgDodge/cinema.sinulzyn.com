@@ -38,6 +38,7 @@ export const actions: Actions = {
 
         // Initialize a temporary Admin client to bypass API rules safely
         const pbUrl = process.env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090';
+        console.log(`[Auth] Attempting login/register at: ${pbUrl}`);
         const adminPb = new PocketBase(pbUrl);
         
         try {

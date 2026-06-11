@@ -18,8 +18,8 @@
             {#if status.isAuthenticated}
                 <div class="p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
                     <p class="text-xs text-blue-400 uppercase font-bold mb-2">User Details</p>
-                    <p class="text-sm"><strong>ID:</strong> {status.user.id}</p>
-                    <p class="text-sm"><strong>Email:</strong> {status.user.email}</p>
+                    <p class="text-sm"><strong>ID:</strong> {status.user?.id}</p>
+                    <p class="text-sm"><strong>Email:</strong> {status.user?.email}</p>
                 </div>
                 
                 <a href="/passes" class="block w-full text-center bg-blue-600 py-3 rounded-xl font-bold mt-4">Go to Wallet</a>

@@ -10,6 +10,9 @@ export const load: PageServerLoad = async ({ locals }) => {
     const pbUrl = process.env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090';
     const adminPb = new PocketBase(pbUrl);
 
+    let tickets: any[] = [];
+    let groups: any[] = [];
+
     try {
         const adminEmail = process.env.PB_ADMIN_EMAIL;
         const adminPassword = process.env.PB_ADMIN_PASSWORD;
@@ -20,29 +23,30 @@ export const load: PageServerLoad = async ({ locals }) => {
             await adminPb.admins.authWithPassword(adminEmail, adminPassword);
         }
 
-        // Fetch tickets and groups using the Admin client to ensure we see everything
-        let tickets: any[] = [];
-        let groups: any[] = [];
-
+        // DEBUG: Fetch everything without filter first to see if they appear
         try {
-            tickets = await adminPb.collection('tickets').getFullList({
-                filter: `userId = "${locals.user.id}"`,
+            const rawTickets = await adminPb.collection('tickets').getFullList({
                 sort: '-created'
             });
+            console.log(`[Passes Load] RAW Tickets in DB: ${rawTickets.length}`);
+            // Now filter manually for safety
+            tickets = rawTickets.filter(t => t.userId === locals.user?.id);
         } catch (e) {
-            console.log("[Passes Load] tickets collection likely doesn't exist yet.");
+            console.log("[Passes Load] tickets fetch error");
         }
 
         try {
-            groups = await adminPb.collection('groups').getFullList({
-                filter: `userId = "${locals.user.id}"`,
+            const rawGroups = await adminPb.collection('groups').getFullList({
                 sort: '-created'
             });
+            console.log(`[Passes Load] RAW Groups in DB: ${rawGroups.length}`);
+            // Now filter manually for safety
+            groups = rawGroups.filter(g => g.userId === locals.user?.id);
         } catch (e) {
-            console.log("[Passes Load] groups collection likely doesn't exist yet.");
+            console.log("[Passes Load] groups fetch error");
         }
 
-        console.log(`[Passes Load] User: ${locals.user.email}, Tickets: ${tickets.length}, Groups: ${groups.length}`);
+        console.log(`[Passes Load] UserID: ${locals.user?.id}, Filtered Tickets: ${tickets.length}, Filtered Groups: ${groups.length}`);
 
         adminPb.authStore.clear();
 
