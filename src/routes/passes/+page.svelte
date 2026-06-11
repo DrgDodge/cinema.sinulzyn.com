@@ -6,6 +6,18 @@
     let groups = $derived(data.groups);
 
     let showCreateGroup = $state(false);
+
+    function formatDate(dateStr: string) {
+        if (!dateStr) return "Unknown date";
+        try {
+            // PocketBase dates are usually "YYYY-MM-DD HH:mm:ss.msZ" 
+            // but can sometimes just be "YYYY-MM-DD HH:mm:ss"
+            const iso = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T');
+            return new Date(iso).toLocaleDateString();
+        } catch (e) {
+            return "Invalid date";
+        }
+    }
 </script>
 
 <svelte:head>
@@ -44,7 +56,7 @@
                             <div class="flex justify-between items-start">
                                 <div>
                                     <h3 class="font-bold text-white group-hover:text-blue-400 transition-colors">{group.name}</h3>
-                                    <p class="text-xs text-gray-500 mt-1">Created {new Date(group.created.replace(' ', 'T')).toLocaleDateString()}</p>
+                                    <p class="text-xs text-gray-500 mt-1">Created {formatDate(group.created)}</p>
                                 </div>
                                 <div class="bg-gray-800 text-gray-400 text-[10px] px-2 py-1 rounded uppercase font-bold tracking-tighter">
                                     Swipe View
