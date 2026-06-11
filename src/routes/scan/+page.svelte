@@ -2,22 +2,22 @@
     import { onMount, onDestroy } from 'svelte';
     import Tesseract from 'tesseract.js';
 
-    let videoElement: HTMLVideoElement;
-    let canvasElement: HTMLCanvasElement;
-    let stream: MediaStream | null = null;
+    let videoElement = $state<HTMLVideoElement>();
+    let canvasElement = $state<HTMLCanvasElement>();
+    let stream = $state<MediaStream | null>(null);
     
-    let processing = false;
-    let progress = 0;
-    let errorMsg = '';
+    let processing = $state(false);
+    let progress = $state(0);
+    let errorMsg = $state('');
     
-    let parsedTicket: { movie: string, date: string, time: string, room: string, row: string, seat: string } | null = null;
+    let parsedTicket = $state<{ movie: string, date: string, time: string, room: string, row: string, seat: string } | null>(null);
 
     onMount(async () => {
         try {
             stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment' }
             });
-            if (videoElement) {
+            if (videoElement && stream) {
                 videoElement.srcObject = stream;
             }
         } catch (err) {
@@ -153,8 +153,9 @@
 
         <div class="mt-10 mb-4">
             <button 
-                on:click={captureAndScan}
+                onclick={captureAndScan}
                 disabled={processing}
+                aria-label="Capture and scan receipt"
                 class="w-20 h-20 rounded-full bg-transparent border-[4px] border-gray-300 flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:hover:scale-100 group"
             >
                 <div class="w-16 h-16 rounded-full bg-white group-hover:bg-gray-200 transition-colors"></div>
@@ -217,7 +218,8 @@
             </div>
             
             <button 
-                on:click={() => location.reload()} 
+                onclick={() => location.reload()} 
+                aria-label="Scan another receipt"
                 class="w-full mt-8 bg-gray-900 border border-gray-800 hover:bg-gray-800 text-white font-medium py-4 rounded-xl transition-colors shadow-lg"
             >
                 Scan Another Receipt
