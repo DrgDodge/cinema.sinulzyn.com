@@ -44,7 +44,7 @@
                             <div class="flex justify-between items-start">
                                 <div>
                                     <h3 class="font-bold text-white group-hover:text-blue-400 transition-colors">{group.name}</h3>
-                                    <p class="text-xs text-gray-500 mt-1">Created {new Date(group.created).toLocaleDateString()}</p>
+                                    <p class="text-xs text-gray-500 mt-1">Created {new Date(group.created.replace(' ', 'T')).toLocaleDateString()}</p>
                                 </div>
                                 <div class="bg-gray-800 text-gray-400 text-[10px] px-2 py-1 rounded uppercase font-bold tracking-tighter">
                                     Swipe View

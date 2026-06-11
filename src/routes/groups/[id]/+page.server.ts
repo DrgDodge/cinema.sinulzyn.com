@@ -20,16 +20,20 @@ export const load: PageServerLoad = async ({ params, locals }) => {
         });
 
         const allUserTickets = locals.user ? await adminPb.collection('tickets').getFullList({
-            filter: `userId = "${locals.user.id}" && (groupId = "" || groupId = null)`,
+            filter: `userId = "${locals.user.id}"`,
             sort: '-created'
         }) : [];
+
+        // Manual filter for safety and logging
+        const availableTickets = allUserTickets.filter(t => !t.groupId);
+        console.log(`[Group Load] Found ${allUserTickets.length} total user tickets, ${availableTickets.length} are available (ungrouped).`);
 
         adminPb.authStore.clear();
 
         return {
             group: structuredClone(group),
             tickets: structuredClone(tickets),
-            availableTickets: structuredClone(allUserTickets)
+            availableTickets: structuredClone(availableTickets)
         };
     } catch (e: any) {
         console.error("Group Load Error:", e);
