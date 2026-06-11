@@ -1,10 +1,13 @@
-import { error, redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import PocketBase from 'pocketbase';
 import type { Actions } from './$types';
 
 export const actions: Actions = {
     create: async ({ request, locals }) => {
-        if (!locals.user) throw redirect(303, '/login');
+        // CRITICAL: Ensure the user is actually logged in before creating anything
+        if (!locals.user || !locals.user.id) {
+            throw redirect(303, '/login');
+        }
 
         const data = await request.formData();
         const name = data.get('name') as string;
@@ -22,28 +25,31 @@ export const actions: Actions = {
                  return fail(500, { error: 'Server misconfiguration: Admin credentials missing.' });
             }
 
-            // Ensure groups collection exists
+            // Ensure groups collection exists with proper schema
             try {
                 await adminPb.collections.getOne('groups');
             } catch (e) {
                 await adminPb.collections.create({
                     name: 'groups',
                     type: 'base',
-                    listRule: '',
+                    listRule: '', // Allows public listing if needed, but we filter by userId in load
                     viewRule: '',
                     createRule: null,
                     updateRule: null,
                     deleteRule: null,
                     fields: [
-                        { name: 'name', type: 'text' },
-                        { name: 'userId', type: 'text' }
+                        { name: 'name', type: 'text', required: true },
+                        { name: 'userId', type: 'text', required: true },
+                        { name: 'isPublic', type: 'bool' }
                     ]
                 });
             }
 
+            // Create the group and explicitly link it to the logged-in user
             const record = await adminPb.collection('groups').create({
                 name,
-                userId: locals.user.id
+                userId: locals.user.id,
+                isPublic: false // Default to private
             });
 
             throw redirect(303, '/groups/' + record.id);
