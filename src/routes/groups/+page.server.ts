@@ -4,7 +4,6 @@ import type { Actions } from './$types';
 
 export const actions: Actions = {
     create: async ({ request, locals }) => {
-        // CRITICAL: Ensure the user is actually logged in before creating anything
         if (!locals.user || !locals.user.id) {
             throw redirect(303, '/login');
         }
@@ -25,14 +24,25 @@ export const actions: Actions = {
                  return fail(500, { error: 'Server misconfiguration: Admin credentials missing.' });
             }
 
-            // Ensure groups collection exists with proper schema
+            // Ensure groups collection exists with the isPublic field
             try {
-                await adminPb.collections.getOne('groups');
+                const collection = await adminPb.collections.getOne('groups');
+                // Check if isPublic field exists, if not, add it
+                const hasPublicField = collection.fields?.find(f => f.name === 'isPublic') || 
+                                     collection.schema?.find(f => f.name === 'isPublic');
+                
+                if (!hasPublicField) {
+                    console.log("[Groups] Adding missing isPublic field to existing collection...");
+                    await adminPb.collections.update('groups', {
+                        'fields+': [{ name: 'isPublic', type: 'bool' }]
+                    });
+                }
             } catch (e) {
+                console.log("[Groups] Creating groups collection...");
                 await adminPb.collections.create({
                     name: 'groups',
                     type: 'base',
-                    listRule: '', // Allows public listing if needed, but we filter by userId in load
+                    listRule: '', 
                     viewRule: '',
                     createRule: null,
                     updateRule: null,
@@ -45,11 +55,10 @@ export const actions: Actions = {
                 });
             }
 
-            // Create the group and explicitly link it to the logged-in user
             const record = await adminPb.collection('groups').create({
                 name,
                 userId: locals.user.id,
-                isPublic: false // Default to private
+                isPublic: false 
             });
 
             throw redirect(303, '/groups/' + record.id);
