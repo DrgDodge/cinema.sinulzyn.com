@@ -369,7 +369,7 @@
         stopStream();
     }
 
-    function scanAnother() {
+    async function scanAnother() {
         draft = { movie: '', date: '', time: '', room: '', row: '', seat: '', qrData: '', qrText: '' };
         liveWordBoxes = [];
         showTicket = false;
@@ -378,6 +378,9 @@
             const oCtx = overlayCanvas?.getContext('2d');
             if (oCtx && overlayCanvas) {
                 oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            }
+            if (!tesseractWorker) {
+                tesseractWorker = await Tesseract.createWorker('ron+eng');
             }
             videoElement.play();
             startARLoop();
