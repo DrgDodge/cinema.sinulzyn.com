@@ -31,8 +31,8 @@ export const load: PageServerLoad = async ({ locals }) => {
             console.log(`[Passes Load] RAW Tickets in DB: ${rawTickets.length}`);
             // Now filter manually for safety
             tickets = rawTickets.filter(t => t.userId === locals.user?.id);
-        } catch (e) {
-            console.log("[Passes Load] tickets fetch error");
+        } catch (e: any) {
+            console.error("[Passes Load] tickets fetch error:", e.status, e.message);
         }
 
         try {
@@ -42,8 +42,8 @@ export const load: PageServerLoad = async ({ locals }) => {
             console.log(`[Passes Load] RAW Groups in DB: ${rawGroups.length}`);
             // Now filter manually for safety
             groups = rawGroups.filter(g => g.userId === locals.user?.id);
-        } catch (e) {
-            console.log("[Passes Load] groups fetch error");
+        } catch (e: any) {
+            console.error("[Passes Load] groups fetch error:", e.status, e.message);
         }
 
         console.log(`[Passes Load] UserID: ${locals.user?.id}, Filtered Tickets: ${tickets.length}, Filtered Groups: ${groups.length}`);
