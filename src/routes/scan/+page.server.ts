@@ -58,7 +58,8 @@ export const actions: Actions = {
                             { name: 'seat', type: 'text' },
                             { name: 'qrData', type: 'text' },
                             { name: 'qrText', type: 'text' },
-                            { name: 'userId', type: 'text' }
+                            { name: 'userId', type: 'text' },
+                            { name: 'groupId', type: 'text' }
                         ]
                     });
                 } catch (e2) {
@@ -80,14 +81,15 @@ export const actions: Actions = {
                             { name: 'seat', type: 'text' },
                             { name: 'qrData', type: 'text' },
                             { name: 'qrText', type: 'text' },
-                            { name: 'userId', type: 'text' }
+                            { name: 'userId', type: 'text' },
+                            { name: 'groupId', type: 'text' }
                         ]
                     });
                 }
             }
 
             const record = await adminPb.collection('tickets').create({
-                movie, date, time, room, row, seat, qrData, qrText, userId
+                movie, date, time, room, row, seat, qrData, qrText, userId, groupId: ''
             });
 
             throw redirect(303, '/passes/' + record.id);
