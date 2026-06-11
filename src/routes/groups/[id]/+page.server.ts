@@ -14,25 +14,20 @@ export const load: PageServerLoad = async ({ params, locals }) => {
         }
 
         const group = await adminPb.collection('groups').getOne(params.id);
-        const tickets = await adminPb.collection('tickets').getFullList({
-            filter: `groupId = "${params.id}"`,
-            sort: 'created'
-        });
+        
+        // Use the simplest possible fetch to avoid v0.22/0.23 parameter conflicts
+        const allTickets = await adminPb.collection('tickets').getFullList();
+        
+        const groupTickets = allTickets.filter(t => t.groupId === params.id);
+        const availableTickets = allTickets.filter(t => t.userId === locals.user?.id && !t.groupId);
 
-        const allUserTickets = locals.user ? await adminPb.collection('tickets').getFullList({
-            filter: `userId = "${locals.user.id}"`,
-            sort: '-created'
-        }) : [];
-
-        // Manual filter for safety and logging
-        const availableTickets = allUserTickets.filter(t => !t.groupId);
-        console.log(`[Group Load] Found ${allUserTickets.length} total user tickets, ${availableTickets.length} are available (ungrouped).`);
+        console.log(`[Group Load] Group: ${group.name}, Tickets In Group: ${groupTickets.length}, Ungrouped Available: ${availableTickets.length}`);
 
         adminPb.authStore.clear();
 
         return {
             group: structuredClone(group),
-            tickets: structuredClone(tickets),
+            tickets: structuredClone(groupTickets),
             availableTickets: structuredClone(availableTickets)
         };
     } catch (e: any) {

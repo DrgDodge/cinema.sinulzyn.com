@@ -21,10 +21,8 @@ export const load: PageServerLoad = async ({ params }) => {
             throw error(403, 'This group is private.');
         }
 
-        const tickets = await adminPb.collection('tickets').getFullList({
-            filter: `groupId = "${params.id}"`,
-            sort: 'created'
-        });
+        const allTickets = await adminPb.collection('tickets').getFullList();
+        const tickets = allTickets.filter(t => t.groupId === params.id);
 
         adminPb.authStore.clear();
 
