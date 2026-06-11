@@ -41,8 +41,14 @@
 
     onMount(async () => {
         if (browser) {
-            // Initialize a persistent Tesseract worker for fast, background AR processing
-            tesseractWorker = await Tesseract.createWorker('ron+eng');
+            // Initialize persistent Tesseract worker with a logger
+            tesseractWorker = await Tesseract.createWorker('ron+eng', 1, {
+                logger: m => {
+                    if (m.status === 'recognizing text') {
+                        progress = Math.round(m.progress * 100);
+                    }
+                }
+            });
             await startCamera();
         }
     });
@@ -108,8 +114,9 @@
     }
 
     function stopStream() {
-        if (!browser) return;
-        cancelAnimationFrame(animId);
+        if (typeof cancelAnimationFrame !== 'undefined') {
+            cancelAnimationFrame(animId);
+        }
         if (stream) {
             stream.getTracks().forEach(track => track.stop());
             stream = null;
@@ -210,7 +217,7 @@
                 });
 
                 // 3. BACKGROUND OCR PROCESSING (Fires async when not busy)
-                if (!isWorkerBusy && tesseractWorker) {
+                if (!isWorkerBusy && tesseractWorker && !processing) {
                     isWorkerBusy = true;
                     
                     // Downscale slightly to keep live AR fast, but keep contrast high
@@ -239,17 +246,19 @@
                     });
                 }
             }
-            animId = requestAnimationFrame(tick);
+            if (typeof requestAnimationFrame !== 'undefined') animId = requestAnimationFrame(tick);
         }
-        animId = requestAnimationFrame(tick);
+        if (typeof requestAnimationFrame !== 'undefined') animId = requestAnimationFrame(tick);
     }
 
     async function captureAndScan() {
-        if (!browser || !videoElement || !canvasElement || !overlayCanvas) return;
+        if (!browser || !videoElement || !canvasElement || !overlayCanvas || !tesseractWorker) return;
 
         processing = true;
         progress = 0;
-        cancelAnimationFrame(animId);
+        if (typeof cancelAnimationFrame !== 'undefined') {
+            cancelAnimationFrame(animId);
+        }
         videoElement.pause(); 
 
         const ctx = canvasElement.getContext('2d', { willReadFrequently: true });
@@ -265,18 +274,8 @@
         const enhancedImageUrl = canvasElement.toDataURL('image/jpeg', 1.0);
 
         try {
-            // We use the temporary global recognize for the high-res capture to show the progress bar
-            const result = await Tesseract.recognize(
-                enhancedImageUrl,
-                'ron+eng',
-                {
-                    logger: m => {
-                        if (m.status === 'recognizing text') {
-                            progress = Math.round(m.progress * 100);
-                        }
-                    }
-                }
-            );
+            // Use the ALREADY RUNNING persistent worker so it doesn't crash the browser by spinning up a new one
+            const result = await tesseractWorker.recognize(enhancedImageUrl);
             
             // Clear AR boxes and draw the final exact ones
             const oCtx = overlayCanvas.getContext('2d');
