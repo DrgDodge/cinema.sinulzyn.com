@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import Tesseract from 'tesseract.js';
+    import jsQR from 'jsqr';
 
     let videoElement = $state<HTMLVideoElement>();
     let canvasElement = $state<HTMLCanvasElement>();
@@ -21,7 +22,8 @@
         room: '',
         row: '',
         seat: '',
-        ticketId: ''
+        qrData: '', // The hidden data inside the physical QR code
+        qrText: ''  // The text printed underneath the QR code
     });
 
     let showTicket = $state(false);
@@ -40,7 +42,6 @@
     async function getDevices() {
         try {
             const devices = await navigator.mediaDevices.enumerateDevices();
-            // Filter only video inputs and try to exclude the front camera if possible
             videoDevices = devices.filter(d => d.kind === 'videoinput');
         } catch (e) {
             console.error('Error enumerating devices:', e);
@@ -48,9 +49,8 @@
     }
 
     async function startCamera(deviceId?: string) {
-        stopStream(); // Stop existing stream before starting a new one
+        stopStream();
         try {
-            // Request very high resolution to leverage flagship sensors (like S26 Ultra)
             const constraints: MediaStreamConstraints = {
                 video: deviceId 
                     ? { deviceId: { exact: deviceId }, width: { ideal: 2560 }, height: { ideal: 1440 } } 
@@ -61,11 +61,8 @@
                 videoElement.srcObject = stream;
             }
             
-            // Once we have permission, get the list of available cameras
             if (videoDevices.length === 0) {
                 await getDevices();
-                
-                // If we started with the generic environment constraint, find which device it actually used
                 if (!deviceId && stream && videoDevices.length > 0) {
                     const activeTrack = stream.getVideoTracks()[0];
                     if (activeTrack) {
@@ -102,28 +99,32 @@
         processing = true;
         progress = 0;
 
-        const ctx = canvasElement.getContext('2d');
+        const ctx = canvasElement.getContext('2d', { willReadFrequently: true });
         if (!ctx) return;
 
-        // Set canvas to high-res video dimensions
         canvasElement.width = videoElement.videoWidth;
         canvasElement.height = videoElement.videoHeight;
         
-        // --- CRITICAL OCR IMPROVEMENT ---
-        // Tesseract struggles with raw thermal paper photos. 
-        // We force maximum contrast, brightness, and grayscale to make the text pitch black on pure white.
+        // 1. Draw raw image first for QR Code reading
+        ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+        const rawImageData = ctx.getImageData(0, 0, canvasElement.width, canvasElement.height);
+        
+        // Scan for physical QR Code
+        const code = jsQR(rawImageData.data, rawImageData.width, rawImageData.height);
+        if (code && !draft.qrData) {
+            draft.qrData = code.data;
+        }
+
+        // 2. Apply extreme contrast filters for Tesseract OCR
         ctx.filter = 'grayscale(100%) contrast(250%) brightness(120%)';
         ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-        
-        // Reset filter
         ctx.filter = 'none';
         
-        // Capture at highest quality
-        const imageDataUrl = canvasElement.toDataURL('image/jpeg', 1.0);
+        const enhancedImageUrl = canvasElement.toDataURL('image/jpeg', 1.0);
 
         try {
             const result = await Tesseract.recognize(
-                imageDataUrl,
+                enhancedImageUrl,
                 'ron+eng',
                 {
                     logger: m => {
@@ -144,11 +145,15 @@
     function parseReceipt(text: string) {
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         
-        // More forgiving regex. Tesseract often confuses A with 4, O with 0, and adds semicolons instead of colons.
         const dateTimeRegex = /D[A4]T[A4][:;\s]*([\d.]+)\s*[O0]R[A4][:;\s]*([\d:]+)/i;
         const roomRegex = /S[A4]L[A4]\s*([O0]?\d+)/i;
         const seatRegex = /R[A4]NDUL[:;\s]*(\d+)\s*L[O0]CUL[:;\s]*(\d+)/i;
-        const idRegex = /\b(\d{9,20})\b/; // Look for a long transaction/ticket barcode ID
+        
+        // QR text is usually a long string of numbers/letters at the bottom
+        const idRegex = /\b([A-Z0-9]{9,25})\b/i; 
+
+        // Find the index of the Date/Time line to use as an anchor
+        const dateLineIndex = lines.findIndex(l => dateTimeRegex.test(l));
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
@@ -157,17 +162,11 @@
             if (dtMatch) {
                 if (!draft.date) draft.date = dtMatch[1];
                 if (!draft.time) draft.time = dtMatch[2];
-                if (!draft.movie && i > 0) {
-                    let m = lines[i - 1];
-                    // Strip trailing stray digits or punctuation that OCR adds
-                    m = m.replace(/[\s\-,;]+[\dOIl]$/, '');
-                    draft.movie = m;
-                }
             }
 
             const roomMatch = line.match(roomRegex);
             if (roomMatch && !draft.room) {
-                draft.room = roomMatch[1].replace(/[O0]/g, '0'); // Fix O read as 0
+                draft.room = roomMatch[1].replace(/[O0]/g, '0');
             }
 
             const seatMatch = line.match(seatRegex);
@@ -177,23 +176,47 @@
             }
 
             const idMatch = line.match(idRegex);
-            if (idMatch && !draft.ticketId) {
-                draft.ticketId = idMatch[1];
+            if (idMatch && !draft.qrText) {
+                // If it's a long number, assume it's the barcode/QR text
+                draft.qrText = idMatch[1];
+            }
+        }
+
+        // --- IMPROVED MOVIE NAME EXTRACTION ---
+        // Look backwards from the Date/Time line
+        if (dateLineIndex > 0 && !draft.movie) {
+            for (let j = dateLineIndex - 1; j >= 0; j--) {
+                let m = lines[j].trim();
+                
+                // Skip lines that are just age ratings, formats, or random noise
+                if (/^(2D|3D|4DX|IMAX|VIP|SUB|DUB|ATMOS|MACRO|AP12|N15|IM18|\s|,)+$/i.test(m)) continue;
+                if (m.length < 3) continue; // Too short to be a movie
+
+                // Strip trailing stray digits or punctuation
+                m = m.replace(/[\s\-,;]+[\dOIl]$/, '');
+                draft.movie = m;
+                break; // Found the movie title!
             }
         }
     }
 
     function generateTicket() {
-        if (!draft.ticketId) {
-            // Generate a fallback barcode ID if OCR missed the numbers at the bottom
-            draft.ticketId = Math.floor(Math.random() * 9000000000) + 1000000000 + '';
+        if (!draft.qrData && draft.qrText) {
+            draft.qrData = draft.qrText; // Fallback: Use the text as the QR data
+        } else if (!draft.qrData) {
+            draft.qrData = Math.floor(Math.random() * 9000000000) + 1000000000 + '';
         }
+        
+        if (!draft.qrText) {
+            draft.qrText = draft.qrData;
+        }
+
         showTicket = true;
         stopStream();
     }
 
     function scanAnother() {
-        draft = { movie: '', date: '', time: '', room: '', row: '', seat: '', ticketId: '' };
+        draft = { movie: '', date: '', time: '', room: '', row: '', seat: '', qrData: '', qrText: '' };
         showTicket = false;
         startCamera();
     }
@@ -257,10 +280,6 @@
                 <h3 class="text-sm font-semibold text-white">Scan Data</h3>
                 <span class="text-[10px] uppercase tracking-wider text-blue-400 font-bold px-2 py-1 bg-blue-500/10 rounded-md">Editable</span>
             </div>
-            
-            <p class="text-xs text-gray-400 mb-5">
-                Scan multiple times to fill missing data, or manually correct typos below.
-            </p>
 
             <div class="grid grid-cols-2 gap-3">
                 <!-- Movie Name -->
@@ -272,7 +291,7 @@
                     </div>
                 </div>
 
-                <!-- Date -->
+                <!-- Date & Time -->
                 <div>
                     <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Date</label>
                     <div class="relative mt-1">
@@ -280,8 +299,6 @@
                         <div class="absolute right-3 top-1/2 -translate-y-1/2">{draft.date ? '✅' : '❌'}</div>
                     </div>
                 </div>
-
-                <!-- Time -->
                 <div>
                     <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Time</label>
                     <div class="relative mt-1">
@@ -290,28 +307,43 @@
                     </div>
                 </div>
 
-                <!-- Room -->
-                <div class="col-span-2 sm:col-span-1">
-                    <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Room</label>
-                    <div class="relative mt-1">
-                        <input bind:value={draft.room} class="w-full bg-gray-950 border {draft.room ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors" placeholder="Missing" />
-                        <div class="absolute right-3 top-1/2 -translate-y-1/2">{draft.room ? '✅' : '❌'}</div>
+                <!-- Room, Row, Seat -->
+                <div class="col-span-2 flex gap-3">
+                    <div class="flex-1">
+                        <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Room</label>
+                        <div class="relative mt-1">
+                            <input bind:value={draft.room} class="w-full bg-gray-950 border {draft.room ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors text-center" placeholder="-" />
+                        </div>
                     </div>
-                </div>
-
-                <!-- Row & Seat -->
-                <div class="col-span-2 sm:col-span-1 flex gap-3">
                     <div class="flex-1">
                         <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Row</label>
                         <div class="relative mt-1">
                             <input bind:value={draft.row} class="w-full bg-gray-950 border {draft.row ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors text-center" placeholder="-" />
                         </div>
                     </div>
-
                     <div class="flex-1">
                         <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Seat</label>
                         <div class="relative mt-1">
                             <input bind:value={draft.seat} class="w-full bg-gray-950 border {draft.seat ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors text-center" placeholder="-" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- QR Payload & Text -->
+                <div class="col-span-2 flex gap-3 mt-2 pt-4 border-t border-gray-800">
+                    <div class="flex-1">
+                        <label class="text-[10px] uppercase text-gray-500 font-medium ml-1 flex items-center gap-1">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+                            QR Code Scanned
+                        </label>
+                        <div class="relative mt-1 flex items-center h-10 px-3 bg-gray-950 border {draft.qrData ? 'border-green-500/30 text-green-400' : 'border-gray-800 text-gray-500'} rounded-xl text-xs font-mono overflow-hidden">
+                            {draft.qrData ? draft.qrData.substring(0, 12) + '...' : 'Not found yet'}
+                        </div>
+                    </div>
+                    <div class="flex-1">
+                        <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Printed ID Text</label>
+                        <div class="relative mt-1">
+                            <input bind:value={draft.qrText} class="w-full bg-gray-950 border {draft.qrText ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-3 py-2.5 text-xs font-mono focus:outline-none focus:border-blue-500 transition-colors" placeholder="Missing" />
                         </div>
                     </div>
                 </div>
@@ -374,15 +406,14 @@
                     <!-- Functional QR Code -->
                     <div class="w-full flex flex-col items-center mt-10">
                         <div class="bg-white p-3 rounded-2xl shadow-inner">
-                            <!-- Using a public API to dynamically generate the QR Code based on the ticket ID -->
                             <img 
-                                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${draft.ticketId}`} 
+                                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(draft.qrData)}`} 
                                 alt="Ticket QR Code" 
                                 class="w-28 h-28 mix-blend-multiply"
                             />
                         </div>
                         <p class="text-[11px] font-mono tracking-[0.2em] text-gray-500 mt-4 uppercase">
-                            {draft.ticketId}
+                            {draft.qrText}
                         </p>
                     </div>
                 </div>
