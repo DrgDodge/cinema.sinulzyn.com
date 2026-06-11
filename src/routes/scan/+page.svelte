@@ -50,8 +50,11 @@
     async function startCamera(deviceId?: string) {
         stopStream(); // Stop existing stream before starting a new one
         try {
+            // Request very high resolution to leverage flagship sensors (like S26 Ultra)
             const constraints: MediaStreamConstraints = {
-                video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment' }
+                video: deviceId 
+                    ? { deviceId: { exact: deviceId }, width: { ideal: 2560 }, height: { ideal: 1440 } } 
+                    : { facingMode: 'environment', width: { ideal: 2560 }, height: { ideal: 1440 } }
             };
             stream = await navigator.mediaDevices.getUserMedia(constraints);
             if (videoElement && stream) {
@@ -102,10 +105,21 @@
         const ctx = canvasElement.getContext('2d');
         if (!ctx) return;
 
+        // Set canvas to high-res video dimensions
         canvasElement.width = videoElement.videoWidth;
         canvasElement.height = videoElement.videoHeight;
+        
+        // --- CRITICAL OCR IMPROVEMENT ---
+        // Tesseract struggles with raw thermal paper photos. 
+        // We force maximum contrast, brightness, and grayscale to make the text pitch black on pure white.
+        ctx.filter = 'grayscale(100%) contrast(250%) brightness(120%)';
         ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-        const imageDataUrl = canvasElement.toDataURL('image/jpeg');
+        
+        // Reset filter
+        ctx.filter = 'none';
+        
+        // Capture at highest quality
+        const imageDataUrl = canvasElement.toDataURL('image/jpeg', 1.0);
 
         try {
             const result = await Tesseract.recognize(
@@ -130,9 +144,10 @@
     function parseReceipt(text: string) {
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         
-        const dateTimeRegex = /DATA:\s*([\d.]+)\s*ORA:\s*([\d:]+)/i;
-        const roomRegex = /SALA\s*(\d+)/i;
-        const seatRegex = /RANDUL:\s*(\d+)\s*LOCUL:\s*(\d+)/i;
+        // More forgiving regex. Tesseract often confuses A with 4, O with 0, and adds semicolons instead of colons.
+        const dateTimeRegex = /D[A4]T[A4][:;\s]*([\d.]+)\s*[O0]R[A4][:;\s]*([\d:]+)/i;
+        const roomRegex = /S[A4]L[A4]\s*([O0]?\d+)/i;
+        const seatRegex = /R[A4]NDUL[:;\s]*(\d+)\s*L[O0]CUL[:;\s]*(\d+)/i;
         const idRegex = /\b(\d{9,20})\b/; // Look for a long transaction/ticket barcode ID
 
         for (let i = 0; i < lines.length; i++) {
@@ -144,14 +159,16 @@
                 if (!draft.time) draft.time = dtMatch[2];
                 if (!draft.movie && i > 0) {
                     let m = lines[i - 1];
-                    // FIX: Strip trailing single digits/spaces (often age ratings or screen numbers read improperly)
-                    m = m.replace(/\s+\d$/, '');
+                    // Strip trailing stray digits or punctuation that OCR adds
+                    m = m.replace(/[\s\-,;]+[\dOIl]$/, '');
                     draft.movie = m;
                 }
             }
 
             const roomMatch = line.match(roomRegex);
-            if (roomMatch && !draft.room) draft.room = roomMatch[1];
+            if (roomMatch && !draft.room) {
+                draft.room = roomMatch[1].replace(/[O0]/g, '0'); // Fix O read as 0
+            }
 
             const seatMatch = line.match(seatRegex);
             if (seatMatch) {
