@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { browser } from '$app/environment';
+    import { enhance } from '$app/forms';
     import Tesseract from 'tesseract.js';
     import jsQR from 'jsqr';
 
@@ -10,6 +11,7 @@
     let stream = $state<MediaStream | null>(null);
     
     let processing = $state(false);
+    let saving = $state(false);
     let progress = $state(0);
 
     // AR Tracking loop ID
@@ -378,7 +380,7 @@
             }
 
             const idMatch = line.match(idRegex);
-            if (idMatch && !draft.qrText) {
+            if (idMatch) {
                 draft.qrText = idMatch[1];
             }
         }
@@ -493,18 +495,36 @@
         </button>
 
         <!-- Infographic Checklist & Edit Form -->
-        <div class="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-2xl z-40">
+        <form 
+            method="POST" 
+            action="?/save" 
+            use:enhance={() => {
+                saving = true;
+                prepTicket();
+                return async ({ update, result }) => {
+                    saving = false;
+                    if (result.type === 'failure') {
+                        ocrDebugError = 'Save Error: ' + result.data?.error;
+                    }
+                    update();
+                };
+            }} 
+            class="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-2xl z-40"
+        >
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-sm font-semibold text-white">Scan Data</h3>
                 <span class="text-[10px] uppercase tracking-wider text-blue-400 font-bold px-2 py-1 bg-blue-500/10 rounded-md">Editable</span>
             </div>
+
+            <input type="hidden" name="qrData" value={draft.qrData} />
+            <input type="hidden" name="qrText" value={draft.qrText} />
 
             <div class="grid grid-cols-2 gap-3">
                 <!-- Movie Name -->
                 <div class="col-span-2">
                     <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Movie</label>
                     <div class="relative mt-1">
-                        <input bind:value={draft.movie} class="w-full bg-gray-950 border {draft.movie ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors" placeholder="Missing..." />
+                        <input name="movie" bind:value={draft.movie} class="w-full bg-gray-950 border {draft.movie ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors" placeholder="Missing..." />
                         <div class="absolute right-3 top-1/2 -translate-y-1/2">{draft.movie ? '✅' : '❌'}</div>
                     </div>
                 </div>
@@ -513,14 +533,14 @@
                 <div>
                     <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Date</label>
                     <div class="relative mt-1">
-                        <input bind:value={draft.date} class="w-full bg-gray-950 border {draft.date ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors" placeholder="Missing" />
+                        <input name="date" bind:value={draft.date} class="w-full bg-gray-950 border {draft.date ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors" placeholder="Missing" />
                         <div class="absolute right-3 top-1/2 -translate-y-1/2">{draft.date ? '✅' : '❌'}</div>
                     </div>
                 </div>
                 <div>
                     <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Time</label>
                     <div class="relative mt-1">
-                        <input bind:value={draft.time} class="w-full bg-gray-950 border {draft.time ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors" placeholder="Missing" />
+                        <input name="time" bind:value={draft.time} class="w-full bg-gray-950 border {draft.time ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors" placeholder="Missing" />
                         <div class="absolute right-3 top-1/2 -translate-y-1/2">{draft.time ? '✅' : '❌'}</div>
                     </div>
                 </div>
@@ -530,19 +550,19 @@
                     <div class="flex-1">
                         <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Room</label>
                         <div class="relative mt-1">
-                            <input bind:value={draft.room} class="w-full bg-gray-950 border {draft.room ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors text-center" placeholder="-" />
+                            <input name="room" bind:value={draft.room} class="w-full bg-gray-950 border {draft.room ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors text-center" placeholder="-" />
                         </div>
                     </div>
                     <div class="flex-1">
                         <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Row</label>
                         <div class="relative mt-1">
-                            <input bind:value={draft.row} class="w-full bg-gray-950 border {draft.row ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors text-center" placeholder="-" />
+                            <input name="row" bind:value={draft.row} class="w-full bg-gray-950 border {draft.row ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors text-center" placeholder="-" />
                         </div>
                     </div>
                     <div class="flex-1">
                         <label class="text-[10px] uppercase text-gray-500 font-medium ml-1">Seat</label>
                         <div class="relative mt-1">
-                            <input bind:value={draft.seat} class="w-full bg-gray-950 border {draft.seat ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors text-center" placeholder="-" />
+                            <input name="seat" bind:value={draft.seat} class="w-full bg-gray-950 border {draft.seat ? 'border-green-500/30 text-white' : 'border-red-500/30 text-red-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors text-center" placeholder="-" />
                         </div>
                     </div>
                 </div>
@@ -568,13 +588,13 @@
             </div>
 
             <button 
-                onclick={generateTicket}
-                disabled={!isComplete}
+                type="submit"
+                disabled={!isComplete || saving}
                 class="w-full mt-6 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 disabled:shadow-none text-white font-semibold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(37,99,235,0.2)]"
             >
-                {isComplete ? 'Generate Pass' : 'Scan missing fields...'}
+                {saving ? 'Saving Pass...' : (isComplete ? 'Generate & Save Pass' : 'Scan missing fields...')}
             </button>
-        </div>
+        </form>
 
     {:else}
         <!-- Digital Pass View -->
