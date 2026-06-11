@@ -8,6 +8,10 @@
     
     let processing = $state(false);
     let progress = $state(0);
+
+    // Camera switching state
+    let videoDevices = $state<MediaDeviceInfo[]>([]);
+    let currentDeviceIndex = $state(0);
     
     // Accumulate the scanned data here
     let draft = $state({
@@ -26,23 +30,59 @@
     let isComplete = $derived(!!(draft.movie && draft.date && draft.time && draft.room && draft.row && draft.seat));
 
     onMount(async () => {
-        startCamera();
+        await startCamera();
     });
 
     onDestroy(() => {
         stopStream();
     });
 
-    async function startCamera() {
+    async function getDevices() {
         try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' }
-            });
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            // Filter only video inputs and try to exclude the front camera if possible
+            videoDevices = devices.filter(d => d.kind === 'videoinput');
+        } catch (e) {
+            console.error('Error enumerating devices:', e);
+        }
+    }
+
+    async function startCamera(deviceId?: string) {
+        stopStream(); // Stop existing stream before starting a new one
+        try {
+            const constraints: MediaStreamConstraints = {
+                video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment' }
+            };
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
             if (videoElement && stream) {
                 videoElement.srcObject = stream;
             }
+            
+            // Once we have permission, get the list of available cameras
+            if (videoDevices.length === 0) {
+                await getDevices();
+                
+                // If we started with the generic environment constraint, find which device it actually used
+                if (!deviceId && stream && videoDevices.length > 0) {
+                    const activeTrack = stream.getVideoTracks()[0];
+                    if (activeTrack) {
+                        const activeLabel = activeTrack.label;
+                        const idx = videoDevices.findIndex(d => d.label === activeLabel);
+                        if (idx !== -1) {
+                            currentDeviceIndex = idx;
+                        }
+                    }
+                }
+            }
         } catch (err) {
             console.error('Camera error. Ensure you are on HTTPS:', err);
+        }
+    }
+
+    function switchCamera() {
+        if (videoDevices.length > 1) {
+            currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length;
+            startCamera(videoDevices[currentDeviceIndex].deviceId);
         }
     }
 
@@ -163,6 +203,17 @@
 
             <!-- Guide Overlay -->
             <div class="absolute inset-0 border-[2px] border-white/20 m-6 rounded-xl pointer-events-none"></div>
+
+            <!-- Switch Camera Button -->
+            {#if videoDevices.length > 1}
+                <button 
+                    onclick={switchCamera}
+                    class="absolute top-4 right-4 bg-gray-950/60 backdrop-blur-md border border-gray-700 p-2.5 rounded-full text-white hover:bg-gray-800 transition-colors z-20 shadow-lg"
+                    aria-label="Switch Camera"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+            {/if}
 
             {#if processing}
                 <div class="absolute inset-0 bg-gray-950/80 flex flex-col items-center justify-center backdrop-blur-md">
