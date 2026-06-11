@@ -20,27 +20,22 @@ export const load: PageServerLoad = async ({ locals }) => {
         if (!adminEmail || !adminPassword) {
             console.error("[Passes Load] CRITICAL: PB_ADMIN_EMAIL or PB_ADMIN_PASSWORD is not set in .env");
         } else {
+            console.log(`[Passes Load] Attempting Admin Auth for: ${adminEmail}`);
             await adminPb.admins.authWithPassword(adminEmail, adminPassword);
         }
 
-        // DEBUG: Fetch everything without filter first to see if they appear
+        // DEBUG: Fetch raw data. Removing 'sort' to ensure simplest possible URL
         try {
-            const rawTickets = await adminPb.collection('tickets').getFullList({
-                sort: '-created'
-            });
+            const rawTickets = await adminPb.collection('tickets').getFullList();
             console.log(`[Passes Load] RAW Tickets in DB: ${rawTickets.length}`);
-            // Now filter manually for safety
             tickets = rawTickets.filter(t => t.userId === locals.user?.id);
         } catch (e: any) {
             console.error("[Passes Load] tickets fetch error:", e.status, e.message);
         }
 
         try {
-            const rawGroups = await adminPb.collection('groups').getFullList({
-                sort: '-created'
-            });
+            const rawGroups = await adminPb.collection('groups').getFullList();
             console.log(`[Passes Load] RAW Groups in DB: ${rawGroups.length}`);
-            // Now filter manually for safety
             groups = rawGroups.filter(g => g.userId === locals.user?.id);
         } catch (e: any) {
             console.error("[Passes Load] groups fetch error:", e.status, e.message);
