@@ -10,10 +10,13 @@
 </svelte:head>
 
 <div class="min-h-screen bg-gray-950 text-white flex flex-col">
-    <!-- Header -->
-    <header class="p-6 border-b border-gray-800 flex flex-col items-center bg-gray-950/50 backdrop-blur-md sticky top-0 z-50">
-        <h1 class="text-xl font-bold">{group.name}</h1>
-        <p class="text-[10px] uppercase tracking-widest text-indigo-400 font-bold mt-1">Shared Cinema Group</p>
+    <!-- Clean Read-Only Header -->
+    <header class="p-8 border-b border-gray-800 flex flex-col items-center bg-gray-950/50 backdrop-blur-md sticky top-0 z-50">
+        <h1 class="text-2xl font-bold tracking-tight">{group.name}</h1>
+        <div class="flex items-center gap-2 mt-2">
+            <div class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+            <p class="text-[10px] uppercase tracking-[0.2em] text-gray-400 font-bold">Shared Cinema Group</p>
+        </div>
     </header>
 
     <!-- Main Horizontal Swipe Section -->
@@ -27,6 +30,7 @@
             <div class="w-full h-full overflow-x-auto snap-x snap-mandatory flex items-center gap-6 px-10 no-scrollbar pb-10">
                 {#each tickets as ticket}
                     <div class="snap-center shrink-0 w-full max-w-[320px] sm:max-w-sm">
+                        <!-- Read-Only Digital Pass -->
                         <div class="bg-gradient-to-b from-indigo-950 to-gray-900 rounded-[2rem] overflow-hidden shadow-[0_0_50px_rgba(79,70,229,0.15)] border border-gray-800 relative drop-shadow-[0_20px_30px_rgba(0,0,0,0.9)]">
                             
                             <div class="absolute top-[42%] -left-4 w-8 h-8 bg-gray-950 rounded-full border-r border-gray-800 z-10"></div>
@@ -83,6 +87,7 @@
                 {/each}
                 <div class="shrink-0 w-1 px-5"></div>
             </div>
+            <!-- Progress Dots -->
             <div class="flex justify-center gap-1.5 mb-10">
                 {#each tickets as _, i}
                     <div class="w-1.5 h-1.5 rounded-full bg-gray-700"></div>
@@ -90,6 +95,11 @@
             </div>
         {/if}
     </main>
+
+    <!-- Branding Footer -->
+    <footer class="p-8 text-center opacity-30">
+        <p class="text-[10px] uppercase tracking-[0.4em] font-bold">Cinema Wallet</p>
+    </footer>
 </div>
 
 <style>

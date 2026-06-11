@@ -51,7 +51,7 @@
     <!-- Public Access Bar -->
     <div class="px-6 py-4 bg-gray-900/30 border-b border-gray-800 flex flex-col sm:flex-row justify-between items-center gap-4">
         <form method="POST" action="?/updatePublic" use:enhance class="flex items-center gap-3">
-            <input type="hidden" name="isPublic" value={!group.isPublic} />
+            <input type="hidden" name="isPublic" value={!group.isPublic ? 'true' : 'false'} />
             <button type="submit" class="text-xs font-bold px-3 py-1.5 rounded-full border {group.isPublic ? 'border-green-500/30 text-green-400 bg-green-500/5' : 'border-gray-700 text-gray-400 bg-gray-800/50'} hover:scale-105 transition-all">
                 {group.isPublic ? 'Disable Public Link' : 'Enable Public Link'}
             </button>

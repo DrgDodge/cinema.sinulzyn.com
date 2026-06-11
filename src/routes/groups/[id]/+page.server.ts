@@ -63,6 +63,8 @@ export const actions = {
         const data = await request.formData();
         const isPublic = data.get('isPublic') === 'true';
 
+        console.log(`[Update Public] Group: ${params.id}, Setting Public to: ${isPublic}`);
+
         const pbUrl = process.env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090';
         const adminPb = new PocketBase(pbUrl);
 
@@ -72,10 +74,10 @@ export const actions = {
             if (adminEmail && adminPassword) {
                  await adminPb.admins.authWithPassword(adminEmail, adminPassword);
             }
-            await adminPb.collection('groups').update(params.id, { isPublic });
+            await adminPb.collection('groups').update(params.id, { isPublic: isPublic });
             return { success: true };
-        } catch (e) {
-            console.error("Update Public Error:", e);
+        } catch (e: any) {
+            console.error("Update Public Error:", e.status, e.message);
             return { success: false };
         } finally {
             adminPb.authStore.clear();
