@@ -1,11 +1,12 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
+    import { browser } from '$app/environment';
     import Tesseract from 'tesseract.js';
     import jsQR from 'jsqr';
 
     let videoElement = $state<HTMLVideoElement>();
     let canvasElement = $state<HTMLCanvasElement>();
-    let overlayCanvas = $state<HTMLCanvasElement>(); // The transparent AR overlay
+    let overlayCanvas = $state<HTMLCanvasElement>();
     let stream = $state<MediaStream | null>(null);
     
     let processing = $state(false);
@@ -13,6 +14,11 @@
 
     // AR Tracking loop ID
     let animId = 0;
+    
+    // Live AR Text state
+    let tesseractWorker: Tesseract.Worker | null = null;
+    let isWorkerBusy = false;
+    let liveWordBoxes: { x: number, y: number, w: number, h: number }[] = $state([]);
 
     // Camera switching state
     let videoDevices = $state<MediaDeviceInfo[]>([]);
@@ -34,14 +40,22 @@
     let isComplete = $derived(!!(draft.movie && draft.date && draft.time && draft.room && draft.row && draft.seat));
 
     onMount(async () => {
-        await startCamera();
+        if (browser) {
+            // Initialize a persistent Tesseract worker for fast, background AR processing
+            tesseractWorker = await Tesseract.createWorker('ron+eng');
+            await startCamera();
+        }
     });
 
     onDestroy(() => {
-        stopStream();
+        if (browser) {
+            stopStream();
+            if (tesseractWorker) tesseractWorker.terminate();
+        }
     });
 
     async function getDevices() {
+        if (!browser) return;
         try {
             const devices = await navigator.mediaDevices.enumerateDevices();
             videoDevices = devices.filter(d => d.kind === 'videoinput');
@@ -51,6 +65,7 @@
     }
 
     async function startCamera(deviceId?: string) {
+        if (!browser) return;
         stopStream();
         try {
             const constraints: MediaStreamConstraints = {
@@ -62,7 +77,6 @@
             if (videoElement && stream) {
                 videoElement.srcObject = stream;
                 
-                // Once the video starts playing, launch the AR scanning loop
                 videoElement.onplay = () => {
                     startARLoop();
                 };
@@ -94,6 +108,7 @@
     }
 
     function stopStream() {
+        if (!browser) return;
         cancelAnimationFrame(animId);
         if (stream) {
             stream.getTracks().forEach(track => track.stop());
@@ -101,7 +116,6 @@
         }
     }
 
-    // Calculates the offset and scaling to map video coordinates to the object-cover display
     function getCoverTransforms() {
         if (!videoElement || !overlayCanvas) return { scale: 1, offsetX: 0, offsetY: 0 };
         
@@ -110,12 +124,10 @@
         let scale, offsetX, offsetY;
 
         if (displayRatio > videoRatio) {
-            // Container wider than video. Video scales to fit width, crops top/bottom.
             scale = overlayCanvas.width / videoElement.videoWidth;
             offsetX = 0;
             offsetY = (overlayCanvas.height - (videoElement.videoHeight * scale)) / 2;
         } else {
-            // Container taller than video. Video scales to fit height, crops left/right.
             scale = overlayCanvas.height / videoElement.videoHeight;
             offsetX = (overlayCanvas.width - (videoElement.videoWidth * scale)) / 2;
             offsetY = 0;
@@ -123,13 +135,16 @@
         return { scale, offsetX, offsetY };
     }
 
-    // Real-time loop to find and draw bounding boxes around QR codes
     function startARLoop() {
-        if (!videoElement || !overlayCanvas) return;
+        if (!browser || !videoElement || !overlayCanvas) return;
         
         const offscreen = document.createElement('canvas');
         const offCtx = offscreen.getContext('2d', { willReadFrequently: true });
-        if (!offCtx) return;
+        
+        const textOffscreen = document.createElement('canvas');
+        const textOffCtx = textOffscreen.getContext('2d', { willReadFrequently: true });
+        
+        if (!offCtx || !textOffCtx) return;
 
         function tick() {
             if (!videoElement || !overlayCanvas || processing || videoElement.paused || videoElement.ended) {
@@ -143,8 +158,9 @@
                 if (!oCtx) return;
 
                 oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                const transforms = getCoverTransforms();
 
-                // Downscale video for fast real-time QR detection
+                // 1. FAST QR CODE DETECTION (Runs every frame)
                 offscreen.width = 400;
                 offscreen.height = Math.floor(400 / (videoElement.videoWidth / videoElement.videoHeight));
                 offCtx.drawImage(videoElement, 0, 0, offscreen.width, offscreen.height);
@@ -152,12 +168,10 @@
                 const imgData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
                 const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "attemptBoth" });
 
+                const scaleToVideo = videoElement.videoWidth / offscreen.width;
+
                 if (code) {
                     draft.qrData = code.data;
-                    
-                    // Draw AR Box on screen
-                    const scaleToVideo = videoElement.videoWidth / offscreen.width;
-                    const transforms = getCoverTransforms();
                     
                     const mapPt = (pt: {x: number, y: number}) => ({
                         x: (pt.x * scaleToVideo) * transforms.scale + transforms.offsetX,
@@ -176,10 +190,53 @@
                     oCtx.lineTo(pt4.x, pt4.y);
                     oCtx.closePath();
                     oCtx.lineWidth = 4;
-                    oCtx.strokeStyle = "#22c55e"; // green-500
+                    oCtx.strokeStyle = "#22c55e"; 
                     oCtx.fillStyle = "rgba(34, 197, 94, 0.3)";
                     oCtx.fill();
                     oCtx.stroke();
+                }
+
+                // 2. LIVE TEXT DRAWING (Draws cached boxes every frame)
+                oCtx.strokeStyle = "rgba(59, 130, 246, 0.8)"; // Blue boxes for live text
+                oCtx.lineWidth = 2;
+                oCtx.fillStyle = "rgba(59, 130, 246, 0.1)";
+                liveWordBoxes.forEach(box => {
+                    const x = box.x * transforms.scale + transforms.offsetX;
+                    const y = box.y * transforms.scale + transforms.offsetY;
+                    const w = box.w * transforms.scale;
+                    const h = box.h * transforms.scale;
+                    oCtx.strokeRect(x, y, w, h);
+                    oCtx.fillRect(x, y, w, h);
+                });
+
+                // 3. BACKGROUND OCR PROCESSING (Fires async when not busy)
+                if (!isWorkerBusy && tesseractWorker) {
+                    isWorkerBusy = true;
+                    
+                    // Downscale slightly to keep live AR fast, but keep contrast high
+                    textOffscreen.width = 1000;
+                    textOffscreen.height = Math.floor(1000 / (videoElement.videoWidth / videoElement.videoHeight));
+                    
+                    textOffCtx.filter = 'grayscale(100%) contrast(250%) brightness(120%)';
+                    textOffCtx.drawImage(videoElement, 0, 0, textOffscreen.width, textOffscreen.height);
+                    textOffCtx.filter = 'none';
+                    
+                    const textScaleToVideo = videoElement.videoWidth / textOffscreen.width;
+                    const dataUrl = textOffscreen.toDataURL('image/jpeg', 0.8);
+
+                    tesseractWorker.recognize(dataUrl).then(result => {
+                        // Cache the bounding boxes for the render loop
+                        liveWordBoxes = result.data.words.map(w => ({
+                            x: w.bbox.x0 * textScaleToVideo,
+                            y: w.bbox.y0 * textScaleToVideo,
+                            w: (w.bbox.x1 - w.bbox.x0) * textScaleToVideo,
+                            h: (w.bbox.y1 - w.bbox.y0) * textScaleToVideo
+                        }));
+                        isWorkerBusy = false;
+                    }).catch(e => {
+                        console.error("Live OCR err:", e);
+                        isWorkerBusy = false;
+                    });
                 }
             }
             animId = requestAnimationFrame(tick);
@@ -188,12 +245,12 @@
     }
 
     async function captureAndScan() {
-        if (!videoElement || !canvasElement || !overlayCanvas) return;
+        if (!browser || !videoElement || !canvasElement || !overlayCanvas) return;
 
         processing = true;
         progress = 0;
         cancelAnimationFrame(animId);
-        videoElement.pause(); // Freeze the frame!
+        videoElement.pause(); 
 
         const ctx = canvasElement.getContext('2d', { willReadFrequently: true });
         if (!ctx) return;
@@ -201,7 +258,6 @@
         canvasElement.width = videoElement.videoWidth;
         canvasElement.height = videoElement.videoHeight;
 
-        // Apply extreme contrast filters for Tesseract OCR
         ctx.filter = 'grayscale(100%) contrast(250%) brightness(120%)';
         ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
         ctx.filter = 'none';
@@ -209,6 +265,7 @@
         const enhancedImageUrl = canvasElement.toDataURL('image/jpeg', 1.0);
 
         try {
+            // We use the temporary global recognize for the high-res capture to show the progress bar
             const result = await Tesseract.recognize(
                 enhancedImageUrl,
                 'ron+eng',
@@ -221,12 +278,11 @@
                 }
             );
             
-            // Draw Post-Capture AR Bounding Boxes over all recognized text!
+            // Clear AR boxes and draw the final exact ones
             const oCtx = overlayCanvas.getContext('2d');
             const transforms = getCoverTransforms();
             
             if (oCtx && transforms) {
-                // Clear any existing QR tracking box
                 oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
                 
                 result.data.words.forEach(word => {
@@ -287,7 +343,6 @@
             }
         }
 
-        // Improved backward search for movie name
         if (dateLineIndex > 0 && !draft.movie) {
             for (let j = dateLineIndex - 1; j >= 0; j--) {
                 let m = lines[j].trim();
@@ -317,10 +372,10 @@
 
     function scanAnother() {
         draft = { movie: '', date: '', time: '', room: '', row: '', seat: '', qrData: '', qrText: '' };
+        liveWordBoxes = [];
         showTicket = false;
         
-        // If the video was paused during AR capture, clear the overlay and unpause it.
-        if (videoElement) {
+        if (browser && videoElement) {
             const oCtx = overlayCanvas?.getContext('2d');
             if (oCtx && overlayCanvas) {
                 oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
