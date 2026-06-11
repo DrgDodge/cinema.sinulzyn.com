@@ -412,6 +412,20 @@
         stopStream();
     }
 
+    function prepTicket() {
+        if (!draft.qrData && draft.qrText) {
+            draft.qrData = draft.qrText; 
+        } else if (!draft.qrData) {
+            // Generate a random fallback ID if both the scan and the OCR text failed
+            draft.qrData = Math.floor(Math.random() * 9000000000) + 1000000000 + '';
+        }
+        
+        if (!draft.qrText) {
+            draft.qrText = draft.qrData;
+        }
+        stopStream();
+    }
+
     async function scanAnother() {
         draft = { movie: '', date: '', time: '', room: '', row: '', seat: '', qrData: '', qrText: '' };
         liveWordBoxes = [];
