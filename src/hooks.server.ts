@@ -19,7 +19,7 @@ export const handle: Handle = async ({ event, resolve }) => {
         event.locals.pb.authStore.clear();
     }
 
-    event.locals.user = event.locals.pb.authStore.model ? structuredClone(event.locals.pb.authStore.model) : null;
+    event.locals.user = event.locals.pb.authStore.record ? structuredClone(event.locals.pb.authStore.record) : null;
 
     const response = await resolve(event);
 
