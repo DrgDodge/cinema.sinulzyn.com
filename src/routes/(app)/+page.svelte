@@ -10,10 +10,6 @@
     <!-- Liquid Glass Card Wrapper -->
     <div class="relative w-full max-w-5xl h-full max-h-[800px] bg-white/[0.03] backdrop-blur-3xl border border-white/10 rounded-[2rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] flex flex-col md:flex-row overflow-hidden animate-in fade-in zoom-in-95 duration-700 ease-out">
         
-        <!-- Animated glow inside card -->
-        <div class="absolute -top-32 -left-32 w-64 h-64 bg-blue-500/30 rounded-full blur-[80px] pointer-events-none"></div>
-        <div class="absolute -bottom-32 -right-32 w-64 h-64 bg-purple-500/30 rounded-full blur-[80px] pointer-events-none"></div>
-
         <!-- Left Content -->
         <div class="flex-1 p-8 md:p-16 flex flex-col justify-center relative z-10">
             <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-white/90 text-[10px] font-semibold tracking-widest uppercase mb-6 w-fit backdrop-blur-md">

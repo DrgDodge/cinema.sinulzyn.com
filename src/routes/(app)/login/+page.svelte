@@ -17,10 +17,6 @@
 <div class="w-full h-full flex items-center justify-center p-4 md:p-8">
     <div class="w-full max-w-md bg-white/[0.03] backdrop-blur-3xl border border-white/10 rounded-[2rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] relative overflow-hidden animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out">
         
-        <!-- Decorative Glow inside card -->
-        <div class="absolute -top-20 -left-20 w-48 h-48 bg-blue-500/20 rounded-full blur-[60px] pointer-events-none"></div>
-        <div class="absolute -bottom-20 -right-20 w-48 h-48 bg-fuchsia-500/20 rounded-full blur-[60px] pointer-events-none"></div>
-
         <div class="p-8 md:p-10 relative z-10">
             <div class="mb-10 text-center">
                 <h2 class="text-3xl font-bold tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-br from-white to-white/60">Cinema Wallet</h2>
