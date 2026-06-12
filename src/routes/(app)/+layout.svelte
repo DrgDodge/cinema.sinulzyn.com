@@ -53,8 +53,8 @@
                 © {new Date().getFullYear()} Cinema Wallet. All rights reserved.
             </p>
             <div class="flex gap-6">
-                <a href="#" class="text-gray-500 hover:text-gray-300 transition-colors text-sm">Privacy</a>
-                <a href="#" class="text-gray-500 hover:text-gray-300 transition-colors text-sm">Terms</a>
+                <a href="/" class="text-gray-500 hover:text-gray-300 transition-colors text-sm">Privacy</a>
+                <a href="/" class="text-gray-500 hover:text-gray-300 transition-colors text-sm">Terms</a>
             </div>
         </div>
     </footer>

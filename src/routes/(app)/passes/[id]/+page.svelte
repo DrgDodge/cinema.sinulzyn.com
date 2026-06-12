@@ -1,6 +1,6 @@
 <script lang="ts">
     let { data } = $props();
-    const ticket = data.ticket;
+    let ticket = $derived(data.ticket);
     
     let copyText = $state("Share Link");
 

@@ -14,13 +14,11 @@
     let saving = $state(false);
     let progress = $state(0);
 
-    // AR Tracking loop ID
-    let animId = 0;
+    // Template dimensions for cropping
+    let templateRect = $state({ x: 0, y: 0, w: 0, h: 0 });
     
-    // Live AR Text state
+    // OCR worker
     let tesseractWorker: Tesseract.Worker | null = null;
-    let isWorkerBusy = false;
-    let liveWordBoxes: { x: number, y: number, w: number, h: number }[] = $state([]);
     let ocrDebugError = $state('');
 
     // Camera switching state
@@ -124,9 +122,6 @@
     }
 
     function stopStream() {
-        if (typeof cancelAnimationFrame !== 'undefined') {
-            cancelAnimationFrame(animId);
-        }
         if (stream) {
             stream.getTracks().forEach(track => track.stop());
             stream = null;
@@ -153,148 +148,40 @@
     }
 
     function startARLoop() {
-        if (!browser || !videoElement || !overlayCanvas) return;
-        
-        const offscreen = document.createElement('canvas');
-        const offCtx = offscreen.getContext('2d', { willReadFrequently: true });
-        
-        const textOffscreen = document.createElement('canvas');
-        const textOffCtx = textOffscreen.getContext('2d', { willReadFrequently: true });
-        
-        if (!offCtx || !textOffCtx) return;
-
-        function tick() {
-            if (!videoElement || !overlayCanvas || processing || videoElement.paused || videoElement.ended) {
-                return;
-            }
-
-            if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-                overlayCanvas.width = overlayCanvas.clientWidth;
-                overlayCanvas.height = overlayCanvas.clientHeight;
-                const oCtx = overlayCanvas.getContext('2d');
-                if (!oCtx) return;
-
-                oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-                const transforms = getCoverTransforms();
-
-                // 1. FAST QR CODE DETECTION (Runs every frame)
-                offscreen.width = 400;
-                offscreen.height = Math.floor(400 / (videoElement.videoWidth / videoElement.videoHeight));
-                offCtx!.drawImage(videoElement, 0, 0, offscreen.width, offscreen.height);
-                
-                const imgData = offCtx!.getImageData(0, 0, offscreen.width, offscreen.height);
-                const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "attemptBoth" });
-
-                const scaleToVideo = videoElement.videoWidth / offscreen.width;
-
-                if (code) {
-                    draft.qrData = code.data;
-                    
-                    const mapPt = (pt: {x: number, y: number}) => ({
-                        x: (pt.x * scaleToVideo) * transforms.scale + transforms.offsetX,
-                        y: (pt.y * scaleToVideo) * transforms.scale + transforms.offsetY
-                    });
-                    
-                    const pt1 = mapPt(code.location.topLeftCorner);
-                    const pt2 = mapPt(code.location.topRightCorner);
-                    const pt3 = mapPt(code.location.bottomRightCorner);
-                    const pt4 = mapPt(code.location.bottomLeftCorner);
-                    
-                    oCtx.beginPath();
-                    oCtx.moveTo(pt1.x, pt1.y);
-                    oCtx.lineTo(pt2.x, pt2.y);
-                    oCtx.lineTo(pt3.x, pt3.y);
-                    oCtx.lineTo(pt4.x, pt4.y);
-                    oCtx.closePath();
-                    oCtx.lineWidth = 4;
-                    oCtx.strokeStyle = "#22c55e"; 
-                    oCtx.fillStyle = "rgba(34, 197, 94, 0.3)";
-                    oCtx.fill();
-                    oCtx.stroke();
-                }
-
-                // 2. LIVE TEXT DRAWING (Draws cached boxes every frame)
-                oCtx.strokeStyle = "rgba(59, 130, 246, 0.8)"; // Blue boxes for live text
-                oCtx.lineWidth = 2;
-                oCtx.fillStyle = "rgba(59, 130, 246, 0.1)";
-                liveWordBoxes.forEach(box => {
-                    const x = box.x * transforms.scale + transforms.offsetX;
-                    const y = box.y * transforms.scale + transforms.offsetY;
-                    const w = box.w * transforms.scale;
-                    const h = box.h * transforms.scale;
-                    oCtx.strokeRect(x, y, w, h);
-                    oCtx.fillRect(x, y, w, h);
-                });
-
-                // 3. BACKGROUND OCR PROCESSING (Fires async when not busy)
-                if (!isWorkerBusy && tesseractWorker && !processing) {
-                    isWorkerBusy = true;
-                    
-                    // Downscale slightly to keep live AR fast, but keep contrast high
-                    textOffscreen.width = 1000;
-                    textOffscreen.height = Math.floor(1000 / (videoElement.videoWidth / videoElement.videoHeight));
-                    
-                    textOffCtx!.filter = 'grayscale(100%) contrast(250%) brightness(120%)';
-                    textOffCtx!.drawImage(videoElement, 0, 0, textOffscreen.width, textOffscreen.height);
-                    textOffCtx!.filter = 'none';
-                    
-                    const textScaleToVideo = videoElement.videoWidth / textOffscreen.width;
-                    const dataUrl = textOffscreen.toDataURL('image/jpeg', 0.8);
-
-                    tesseractWorker.recognize(dataUrl).then(result => {
-                        // Cache the bounding boxes for the render loop
-                        liveWordBoxes = result.data.words.map(w => ({
-                            x: w.bbox.x0 * textScaleToVideo,
-                            y: w.bbox.y0 * textScaleToVideo,
-                            w: (w.bbox.x1 - w.bbox.x0) * textScaleToVideo,
-                            h: (w.bbox.y1 - w.bbox.y0) * textScaleToVideo
-                        }));
-                        isWorkerBusy = false;
-                    }).catch(e => {
-                        console.error("Live OCR err:", e);
-                        ocrDebugError = 'Live Error: ' + e?.message;
-                        isWorkerBusy = false;
-                    });
-                }
-            }
-            if (typeof requestAnimationFrame !== 'undefined') animId = requestAnimationFrame(tick);
-        }
-        if (typeof requestAnimationFrame !== 'undefined') animId = requestAnimationFrame(tick);
+        // AR loop removed, using static template overlay
     }
 
     async function captureAndScan() {
-        if (!browser || !videoElement || !canvasElement || !overlayCanvas) return;
+        if (!browser || !videoElement || !canvasElement) return;
 
         processing = true;
         progress = 0;
-        if (typeof cancelAnimationFrame !== 'undefined') {
-            cancelAnimationFrame(animId);
-        }
         videoElement.pause(); 
 
         if (tesseractWorker) {
             await tesseractWorker.terminate();
             tesseractWorker = null;
-            isWorkerBusy = false;
         }
 
         const ctx = canvasElement.getContext('2d', { willReadFrequently: true });
         if (!ctx) return;
 
-        const maxCaptureWidth = 1200;
-        let capW = videoElement.videoWidth;
-        let capH = videoElement.videoHeight;
-        if (capW > maxCaptureWidth) {
-            const scale = maxCaptureWidth / capW;
-            capW = maxCaptureWidth;
-            capH = capH * scale;
-        }
+        // Use native resolution for highest quality
+        const capW = videoElement.videoWidth;
+        const capH = videoElement.videoHeight;
+        
+        // Match the CSS template highlight (60% width, 80% height, centered)
+        const cropW = capW * 0.6;
+        const cropH = capH * 0.8;
+        const cropX = (capW - cropW) / 2;
+        const cropY = (capH - cropH) / 2;
 
-        canvasElement.width = capW;
-        canvasElement.height = capH;
+        canvasElement.width = cropW;
+        canvasElement.height = cropH;
 
         ctx.filter = 'grayscale(100%) contrast(250%) brightness(120%)';
-        ctx.drawImage(videoElement, 0, 0, capW, capH);
+        // Draw only the cropped portion from the video onto the canvas
+        ctx.drawImage(videoElement, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
         ctx.filter = 'none';
         
         const enhancedImageUrl = canvasElement.toDataURL('image/jpeg', 0.9);
@@ -312,33 +199,6 @@
 
             const result = await captureWorker.recognize(enhancedImageUrl);
             await captureWorker.terminate();
-            
-            // Clear AR boxes and draw the final exact ones
-            const oCtx = overlayCanvas.getContext('2d');
-            const transforms = getCoverTransforms();
-            const captureScaleToVideo = videoElement.videoWidth / capW;
-            
-            if (oCtx && transforms) {
-                oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-                
-                (result.data as any).words.forEach((word: any) => {
-                    const vx = word.bbox.x0 * captureScaleToVideo;
-                    const vy = word.bbox.y0 * captureScaleToVideo;
-                    const vw = (word.bbox.x1 - word.bbox.x0) * captureScaleToVideo;
-                    const vh = (word.bbox.y1 - word.bbox.y0) * captureScaleToVideo;
-
-                    const x = vx * transforms.scale + transforms.offsetX;
-                    const y = vy * transforms.scale + transforms.offsetY;
-                    const w = vw * transforms.scale;
-                    const h = vh * transforms.scale;
-                    
-                    oCtx.strokeStyle = "rgba(34, 197, 94, 0.8)";
-                    oCtx.lineWidth = 2;
-                    oCtx.strokeRect(x, y, w, h);
-                    oCtx.fillStyle = "rgba(34, 197, 94, 0.2)";
-                    oCtx.fillRect(x, y, w, h);
-                });
-            }
 
             parseReceipt(result.data.text);
         } catch (err: any) {
@@ -435,19 +295,13 @@
 
     async function scanAnother() {
         draft = { movie: '', date: '', time: '', room: '', row: '', seat: '', qrData: '', qrText: '' };
-        liveWordBoxes = [];
         showTicket = false;
         
         if (browser && videoElement) {
-            const oCtx = overlayCanvas?.getContext('2d');
-            if (oCtx && overlayCanvas) {
-                oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-            }
             if (!tesseractWorker) {
                 tesseractWorker = await Tesseract.createWorker('ron+eng');
             }
             videoElement.play();
-            startARLoop();
         } else {
             startCamera();
         }
@@ -469,7 +323,7 @@
 
     {#if !showTicket}
         <!-- Progressive Camera View -->
-        <div class="relative w-full max-w-sm aspect-[4/3] bg-black rounded-3xl overflow-hidden border border-gray-800 shadow-xl mb-6">
+        <div class="relative w-full max-w-sm aspect-[3/4] bg-black rounded-3xl overflow-hidden border border-gray-800 shadow-xl mb-6">
             <video 
                 bind:this={videoElement} 
                 autoplay 
@@ -479,11 +333,17 @@
             
             <canvas bind:this={canvasElement} class="hidden"></canvas>
             
-            <!-- Transparent AR Overlay Canvas -->
-            <canvas bind:this={overlayCanvas} class="absolute inset-0 w-full h-full z-10 pointer-events-none"></canvas>
-
-            <!-- Guide Overlay -->
-            <div class="absolute inset-0 border-[2px] border-white/20 m-6 rounded-xl pointer-events-none"></div>
+            <!-- Transparent Overlay with Cutout -->
+            <div class="absolute inset-0 bg-black/50 pointer-events-none z-10 flex items-center justify-center">
+                <!-- The transparent hole is created by the box-shadow trick or just an inner div with a border -->
+                <div class="w-[60%] h-[80%] border-2 border-white rounded-xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                    <div class="absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 border-blue-500"></div>
+                    <div class="absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 border-blue-500"></div>
+                    <div class="absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 border-blue-500"></div>
+                    <div class="absolute -bottom-1 -right-1 w-4 h-4 border-b-4 border-r-4 border-blue-500"></div>
+                    <div class="absolute inset-0 flex items-center justify-center opacity-30 text-white font-medium tracking-widest text-sm uppercase">Align Receipt</div>
+                </div>
+            </div>
 
             <!-- Switch Camera Button -->
             {#if videoDevices.length > 1}

@@ -1,6 +1,6 @@
 <script lang="ts">
     let { data } = $props();
-    const status = data.authStatus;
+    let status = $derived(data.authStatus);
 </script>
 
 <div class="min-h-screen bg-gray-950 text-white p-10 flex flex-col items-center">

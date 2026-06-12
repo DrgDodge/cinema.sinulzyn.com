@@ -28,8 +28,8 @@ export const actions: Actions = {
             try {
                 const collection = await adminPb.collections.getOne('groups');
                 // Check if isPublic field exists, if not, add it
-                const hasPublicField = collection.fields?.find(f => f.name === 'isPublic') || 
-                                     collection.schema?.find(f => f.name === 'isPublic');
+                const hasPublicField = collection.fields?.find((f: any) => f.name === 'isPublic') || 
+                                     collection.schema?.find((f: any) => f.name === 'isPublic');
                 
                 if (!hasPublicField) {
                     console.log("[Groups] Adding missing isPublic field to existing collection...");
