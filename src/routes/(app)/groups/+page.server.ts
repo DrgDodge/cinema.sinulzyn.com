@@ -24,17 +24,23 @@ export const actions: Actions = {
                  return fail(500, { error: 'Server misconfiguration: Admin credentials missing.' });
             }
 
-            // Ensure groups collection exists with the isPublic field
+            // Ensure groups collection exists with the isPublic and slug fields
             try {
                 const collection = await adminPb.collections.getOne('groups');
-                // Check if isPublic field exists, if not, add it
+                let fieldsToAdd = [];
+                
                 const hasPublicField = collection.fields?.find((f: any) => f.name === 'isPublic') || 
                                      collection.schema?.find((f: any) => f.name === 'isPublic');
-                
-                if (!hasPublicField) {
-                    console.log("[Groups] Adding missing isPublic field to existing collection...");
+                if (!hasPublicField) fieldsToAdd.push({ name: 'isPublic', type: 'bool' });
+
+                const hasSlugField = collection.fields?.find((f: any) => f.name === 'slug') || 
+                                     collection.schema?.find((f: any) => f.name === 'slug');
+                if (!hasSlugField) fieldsToAdd.push({ name: 'slug', type: 'text' });
+
+                if (fieldsToAdd.length > 0) {
+                    console.log("[Groups] Adding missing fields to existing collection...", fieldsToAdd);
                     await adminPb.collections.update('groups', {
-                        'fields+': [{ name: 'isPublic', type: 'bool' }]
+                        'fields+': fieldsToAdd
                     });
                 }
             } catch (e) {
@@ -50,15 +56,19 @@ export const actions: Actions = {
                     fields: [
                         { name: 'name', type: 'text', required: true },
                         { name: 'userId', type: 'text', required: true },
-                        { name: 'isPublic', type: 'bool' }
+                        { name: 'isPublic', type: 'bool' },
+                        { name: 'slug', type: 'text' }
                     ]
                 });
             }
 
+            const randomSlug = Math.random().toString(36).substring(2, 10);
+
             const record = await adminPb.collection('groups').create({
                 name,
                 userId: locals.user.id,
-                isPublic: false 
+                isPublic: false,
+                slug: randomSlug
             });
 
             throw redirect(303, '/groups/' + record.id);

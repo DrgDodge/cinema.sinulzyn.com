@@ -13,7 +13,13 @@ export const load: PageServerLoad = async ({ params, locals }) => {
             await adminPb.admins.authWithPassword(adminEmail, adminPassword);
         }
 
-        const group = await adminPb.collection('groups').getOne(params.id);
+        let group = await adminPb.collection('groups').getOne(params.id);
+        
+        // Auto-initialize slug if it doesn't exist
+        if (!group.slug) {
+            const randomSlug = Math.random().toString(36).substring(2, 10);
+            group = await adminPb.collection('groups').update(params.id, { slug: randomSlug });
+        }
         
         // Use the simplest possible fetch to avoid v0.22/0.23 parameter conflicts
         const allTickets = await adminPb.collection('tickets').getFullList();
@@ -55,6 +61,45 @@ export const actions = {
         } catch (e) {
             console.error("Add Ticket Error:", e);
             return { success: false };
+        } finally {
+            adminPb.authStore.clear();
+        }
+    },
+    updateSlug: async ({ request, params }) => {
+        const data = await request.formData();
+        let slug = data.get('slug') as string;
+
+        if (!slug || slug.trim() === '') {
+            return { success: false, error: 'Link cannot be empty.' };
+        }
+
+        // Clean slug: lowercase, remove non-alphanumeric except dashes/underscores
+        slug = slug.toLowerCase().replace(/[^a-z0-9-_]/g, '');
+
+        const pbUrl = process.env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090';
+        const adminPb = new PocketBase(pbUrl);
+
+        try {
+            const adminEmail = process.env.PB_ADMIN_EMAIL;
+            const adminPassword = process.env.PB_ADMIN_PASSWORD;
+            if (adminEmail && adminPassword) {
+                await adminPb.admins.authWithPassword(adminEmail, adminPassword);
+            }
+
+            // Check if slug is unique
+            const existing = await adminPb.collection('groups').getFullList({
+                filter: `slug = "${slug}" && id != "${params.id}"`
+            });
+
+            if (existing.length > 0) {
+                return { success: false, error: 'This link is already taken.' };
+            }
+
+            await adminPb.collection('groups').update(params.id, { slug });
+            return { success: true };
+        } catch (e: any) {
+            console.error("Update Slug Error:", e);
+            return { success: false, error: 'Failed to update link.' };
         } finally {
             adminPb.authStore.clear();
         }

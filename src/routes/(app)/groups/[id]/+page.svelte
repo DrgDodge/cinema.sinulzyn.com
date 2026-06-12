@@ -1,6 +1,6 @@
 <script lang="ts">
     import { enhance } from '$app/forms';
-    let { data } = $props();
+    let { data, form } = $props();
     
     let group = $derived(data.group);
     let tickets = $derived(data.tickets);
@@ -8,9 +8,10 @@
 
     let showAddMenu = $state(false);
     let copyText = $state("Copy Public Link");
+    let isEditingSlug = $state(false);
 
     function copyPublicLink() {
-        const url = `${window.location.origin}/public/groups/${group.id}`;
+        const url = `${window.location.origin}/public/groups/${group.slug || group.id}`;
         navigator.clipboard.writeText(url);
         copyText = "Copied! ✅";
         setTimeout(() => { copyText = "Copy Public Link"; }, 2000);
@@ -49,19 +50,54 @@
     </header>
 
     <!-- Public Access Bar -->
-    <div class="px-6 py-3 bg-white/[0.01] border-b border-white/5 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <form method="POST" action="?/updatePublic" use:enhance class="flex items-center gap-3">
-            <input type="hidden" name="isPublic" value={group.isPublic ? 'false' : 'true'} />
-            <button type="submit" class="text-[10px] font-bold px-4 py-2 rounded-full border {group.isPublic ? 'border-green-500/30 text-green-400 bg-green-500/10' : 'border-white/10 text-white/50 bg-white/5'} hover:scale-105 transition-all uppercase tracking-widest">
-                {group.isPublic ? 'Disable Public Link' : 'Enable Public Link'}
-            </button>
-        </form>
-        
+    <div class="px-6 py-4 bg-white/[0.01] border-b border-white/5 flex flex-col items-stretch gap-4">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <form method="POST" action="?/updatePublic" use:enhance class="flex items-center gap-3">
+                <input type="hidden" name="isPublic" value={group.isPublic ? 'false' : 'true'} />
+                <button type="submit" class="text-[10px] font-bold px-4 py-2 rounded-full border {group.isPublic ? 'border-green-500/30 text-green-400 bg-green-500/10' : 'border-white/10 text-white/50 bg-white/5'} hover:scale-105 transition-all uppercase tracking-widest">
+                    {group.isPublic ? 'Disable Public Link' : 'Enable Public Link'}
+                </button>
+            </form>
+            
+            {#if group.isPublic}
+                <button onclick={copyPublicLink} class="text-[10px] font-bold text-white uppercase tracking-widest flex items-center gap-2 hover:text-white/70 transition-colors bg-white/10 px-4 py-2 rounded-full border border-white/20 hover:bg-white/20">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+                    {copyText}
+                </button>
+            {/if}
+        </div>
+
         {#if group.isPublic}
-            <button onclick={copyPublicLink} class="text-[10px] font-bold text-white uppercase tracking-widest flex items-center gap-2 hover:text-white/70 transition-colors bg-white/10 px-4 py-2 rounded-full border border-white/20 hover:bg-white/20">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
-                {copyText}
-            </button>
+            <div class="mt-2 pt-4 border-t border-white/5 flex flex-col gap-2">
+                {#if isEditingSlug}
+                    <form method="POST" action="?/updateSlug" use:enhance={() => {
+                        return async ({ update }) => {
+                            await update();
+                            isEditingSlug = false;
+                        };
+                    }} class="flex items-center gap-2 bg-white/5 p-2 rounded-2xl border border-white/10">
+                        <span class="text-xs text-white/40 pl-2 hidden sm:inline">.../public/groups/</span>
+                        <input type="text" name="slug" value={group.slug} required pattern="[a-zA-Z0-9-_]+" class="flex-1 bg-transparent border-none text-sm text-white focus:outline-none px-2 placeholder:text-white/20" placeholder="custom-link" />
+                        <button type="submit" class="bg-white text-black text-xs font-bold px-4 py-1.5 rounded-xl hover:bg-gray-200 transition-colors">Save</button>
+                        <button type="button" onclick={() => isEditingSlug = false} class="text-xs font-bold text-white/50 px-3 hover:text-white transition-colors">Cancel</button>
+                    </form>
+                    {#if form?.error}
+                        <p class="text-xs text-red-400 font-medium px-2">{form.error}</p>
+                    {/if}
+                {:else}
+                    <div class="flex items-center justify-between bg-white/5 p-3 sm:px-4 rounded-2xl border border-white/10">
+                        <p class="text-xs text-white/60 truncate mr-4 font-mono">
+                            <span class="opacity-50 hidden sm:inline">{window.location.origin}/public/groups/</span><span class="text-white font-bold">{group.slug || group.id}</span>
+                        </p>
+                        <button onclick={() => isEditingSlug = true} class="text-[10px] uppercase tracking-widest font-bold text-blue-400 hover:text-blue-300 transition-colors shrink-0">
+                            Edit Link
+                        </button>
+                    </div>
+                    {#if form?.error}
+                        <p class="text-xs text-red-400 font-medium px-2 mt-1">{form.error}</p>
+                    {/if}
+                {/if}
+            </div>
         {/if}
     </div>
 
@@ -81,33 +117,33 @@
             <div class="w-full h-full overflow-x-auto snap-x snap-mandatory flex items-center gap-6 px-10 no-scrollbar pb-10">
                 {#each tickets as ticket}
                     <div class="snap-center shrink-0 w-full max-w-[320px] sm:max-w-sm">
-                        <!-- Glass Ticket -->
-                        <div class="bg-white/[0.05] backdrop-blur-3xl border border-white/10 rounded-[2.5rem] overflow-hidden shadow-[0_8px_32px_0_rgba(0,0,0,0.4)] relative drop-shadow-2xl">
-                            <div class="absolute top-[42%] -left-4 w-8 h-8 bg-black rounded-full border-r border-white/10 z-10 shadow-inner"></div>
-                            <div class="absolute top-[42%] -right-4 w-8 h-8 bg-black rounded-full border-l border-white/10 z-10 shadow-inner"></div>
+                        <!-- Glass Ticket with Refraction -->
+                        <div class="bg-white/[0.08] backdrop-blur-3xl backdrop-saturate-[1.5] backdrop-brightness-110 border border-white/20 rounded-[2.5rem] overflow-hidden shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_8px_32px_0_rgba(0,0,0,0.5)] relative drop-shadow-2xl">
+                            <div class="absolute top-[42%] -left-4 w-8 h-8 bg-black rounded-full border-r border-white/20 z-10 shadow-inner"></div>
+                            <div class="absolute top-[42%] -right-4 w-8 h-8 bg-black rounded-full border-l border-white/20 z-10 shadow-inner"></div>
                             
-                            <div class="p-8 pb-10 text-center relative bg-white/[0.02]">
-                                <h2 class="text-[10px] uppercase tracking-[0.3em] text-white/40 font-bold mb-4">Cinema Pass</h2>
-                                <h3 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-br from-white to-white/60 leading-tight">{ticket.movie}</h3>
+                            <div class="p-8 pb-10 text-center relative bg-white/[0.05]">
+                                <h2 class="text-[10px] uppercase tracking-[0.3em] text-white/50 font-bold mb-4">Cinema Pass</h2>
+                                <h3 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-br from-white to-white/70 leading-tight">{ticket.movie}</h3>
                             </div>
                             
                             <div class="relative w-full h-0 border-t-2 border-dashed border-white/20"></div>
                             
-                            <div class="p-8 pt-8 bg-black/20">
+                            <div class="p-8 pt-8 bg-black/30 backdrop-saturate-200">
                                 <div class="grid grid-cols-2 gap-y-6 gap-x-6">
-                                    <div><p class="text-[10px] uppercase tracking-wider text-white/40 mb-1 font-semibold">Date</p><p class="font-medium text-sm text-white/90">{ticket.date}</p></div>
-                                    <div><p class="text-[10px] uppercase tracking-wider text-white/40 mb-1 font-semibold">Time</p><p class="font-medium text-sm text-white/90">{ticket.time}</p></div>
-                                    <div><p class="text-[10px] uppercase tracking-wider text-white/40 mb-1 font-semibold">Room</p><p class="font-bold text-white text-xl">{ticket.room}</p></div>
+                                    <div><p class="text-[10px] uppercase tracking-wider text-white/50 mb-1 font-semibold">Date</p><p class="font-medium text-sm text-white/90">{ticket.date}</p></div>
+                                    <div><p class="text-[10px] uppercase tracking-wider text-white/50 mb-1 font-semibold">Time</p><p class="font-medium text-sm text-white/90">{ticket.time}</p></div>
+                                    <div><p class="text-[10px] uppercase tracking-wider text-white/50 mb-1 font-semibold">Room</p><p class="font-bold text-white text-xl">{ticket.room}</p></div>
                                     <div class="flex gap-4">
-                                        <div><p class="text-[10px] uppercase tracking-wider text-white/40 mb-1 font-semibold">Row</p><p class="font-bold text-white text-xl">{ticket.row}</p></div>
-                                        <div><p class="text-[10px] uppercase tracking-wider text-white/40 mb-1 font-semibold">Seat</p><p class="font-bold text-white text-xl">{ticket.seat}</p></div>
+                                        <div><p class="text-[10px] uppercase tracking-wider text-white/50 mb-1 font-semibold">Row</p><p class="font-bold text-white text-xl">{ticket.row}</p></div>
+                                        <div><p class="text-[10px] uppercase tracking-wider text-white/50 mb-1 font-semibold">Seat</p><p class="font-bold text-white text-xl">{ticket.seat}</p></div>
                                     </div>
                                 </div>
                                 <div class="w-full flex flex-col items-center mt-10">
                                     <div class="bg-white/90 p-3 rounded-2xl shadow-inner border border-white/20 backdrop-blur-md">
                                         <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(ticket.qrData)}`} alt="Ticket QR Code" class="w-24 h-24 mix-blend-multiply opacity-90" />
                                     </div>
-                                    <p class="text-[10px] font-mono tracking-[0.2em] text-white/30 mt-4 uppercase font-bold">{ticket.qrText}</p>
+                                    <p class="text-[10px] font-mono tracking-[0.2em] text-white/40 mt-4 uppercase font-bold">{ticket.qrText}</p>
                                 </div>
                             </div>
                         </div>

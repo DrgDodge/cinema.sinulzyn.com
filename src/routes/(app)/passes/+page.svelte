@@ -51,12 +51,12 @@
             {:else}
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {#each groups as group}
-                        <a href="/groups/{group.id}" class="bg-white/[0.03] backdrop-blur-xl border border-white/10 p-5 rounded-[1.5rem] hover:bg-white/[0.06] hover:border-white/20 transition-all duration-300 group flex justify-between items-center shadow-[0_4px_20px_rgba(0,0,0,0.2)] hover:shadow-[0_8px_30px_rgba(255,255,255,0.05)] hover:-translate-y-1">
+                        <a href="/groups/{group.id}" class="bg-white/[0.05] backdrop-blur-xl backdrop-saturate-[1.5] border border-white/20 p-5 rounded-[1.5rem] hover:bg-white/[0.08] hover:border-white/30 transition-all duration-300 group flex justify-between items-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_4px_20px_rgba(0,0,0,0.2)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_8px_30px_rgba(0,0,0,0.3)] hover:-translate-y-1">
                             <div>
                                 <h3 class="font-bold text-white group-hover:text-white/90 transition-colors text-base">{group.name}</h3>
                                 <p class="text-[11px] text-white/40 mt-1 uppercase tracking-wider font-medium">Created {formatDate(group.created)}</p>
                             </div>
-                            <div class="bg-white/10 text-white/80 text-[10px] px-3 py-1.5 rounded-full uppercase font-bold tracking-widest border border-white/10 group-hover:bg-white/20 transition-colors">
+                            <div class="bg-white/10 text-white/80 text-[10px] px-3 py-1.5 rounded-full uppercase font-bold tracking-widest border border-white/10 group-hover:bg-white/20 transition-colors shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]">
                                 Swipe
                             </div>
                         </a>
@@ -76,8 +76,8 @@
             {:else}
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {#each tickets as ticket}
-                        <a href="/passes/{ticket.id}" class="flex items-center gap-4 bg-white/[0.03] backdrop-blur-xl border border-white/10 p-4 rounded-[1.5rem] hover:bg-white/[0.06] hover:border-white/20 transition-all duration-300 group shadow-[0_4px_20px_rgba(0,0,0,0.2)] hover:shadow-[0_8px_30px_rgba(255,255,255,0.05)] hover:-translate-y-1">
-                            <div class="w-12 h-12 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white font-bold shrink-0 shadow-lg group-hover:bg-white/20 transition-colors">
+                        <a href="/passes/{ticket.id}" class="flex items-center gap-4 bg-white/[0.05] backdrop-blur-xl backdrop-saturate-[1.5] border border-white/20 p-4 rounded-[1.5rem] hover:bg-white/[0.08] hover:border-white/30 transition-all duration-300 group shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_4px_20px_rgba(0,0,0,0.2)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_8px_30px_rgba(0,0,0,0.3)] hover:-translate-y-1">
+                            <div class="w-12 h-12 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white font-bold shrink-0 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)] group-hover:bg-white/20 transition-colors">
                                 {ticket.movie.charAt(0)}
                             </div>
                             <div class="min-w-0">

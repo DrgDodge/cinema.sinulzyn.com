@@ -14,7 +14,13 @@ export const load: PageServerLoad = async ({ params }) => {
         }
 
         // Fetch the group and verify it is public
-        const group = await adminPb.collection('groups').getOne(params.id);
+        let group;
+        try {
+            group = await adminPb.collection('groups').getFirstListItem(`slug="${params.slug}"`);
+        } catch (e) {
+            // fallback for older groups that might not have a slug and someone is using the ID
+            group = await adminPb.collection('groups').getOne(params.slug);
+        }
         
         if (!group.isPublic) {
             adminPb.authStore.clear();
@@ -22,7 +28,7 @@ export const load: PageServerLoad = async ({ params }) => {
         }
 
         const allTickets = await adminPb.collection('tickets').getFullList();
-        const tickets = allTickets.filter(t => t.groupId === params.id);
+        const tickets = allTickets.filter(t => t.groupId === group.id);
 
         adminPb.authStore.clear();
 
